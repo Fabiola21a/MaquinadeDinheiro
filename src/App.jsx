@@ -79,6 +79,53 @@ function Led({ color, live = false }) {
   return <span className={`inline-block h-[7px] w-[7px] rounded-full ${live ? "zap-live" : ""}`} style={{ background: color, boxShadow: `0 0 6px ${color}99` }} />;
 }
 
+function EditableLimite({ numero, campo, onChanged }) {
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState(numero[campo]);
+  const [salvando, setSalvando] = useState(false);
+
+  const salvar = async () => {
+    const novo = Number(valor);
+    if (!novo || novo === numero[campo]) { setEditando(false); return; }
+    setSalvando(true);
+
+    const patch = { [campo]: novo };
+    // reflete "cheio" na hora, sem esperar o próximo tick do cron — só mexe em
+    // status automático (ativo/aquecendo/cheio), nunca em banido/pausado (manuais)
+    if (campo === "limite_grupos" && ["ativo", "aquecendo", "cheio"].includes(numero.status)) {
+      if (numero.entrou >= novo) patch.status = "cheio";
+      else if (numero.status === "cheio") patch.status = "ativo";
+    }
+
+    const { error } = await supabase.from("zap_numeros").update(patch).eq("id", numero.id);
+    setSalvando(false);
+    setEditando(false);
+    if (!error) onChanged();
+  };
+
+  if (editando) {
+    return (
+      <input
+        autoFocus
+        type="number"
+        min={1}
+        value={valor}
+        onChange={(e) => setValor(e.target.value)}
+        onBlur={salvar}
+        onKeyDown={(e) => e.key === "Enter" && salvar()}
+        disabled={salvando}
+        className="w-16 px-1.5 py-0.5 rounded-[3px] zap-mono text-[11px] outline-none"
+        style={{ background: "rgba(0,0,0,0.4)", border: `1px solid ${C.ativo}`, color: C.text }}
+      />
+    );
+  }
+  return (
+    <button onClick={() => setEditando(true)} className="zap-mono underline decoration-dotted" style={{ color: C.sub, textUnderlineOffset: 2 }} title="clique para editar">
+      {numero[campo].toLocaleString("pt-BR")}
+    </button>
+  );
+}
+
 function Dosimeter({ value, max }) {
   const segments = 20;
   const filled = Math.round((value / Math.max(max, 1)) * segments);
@@ -400,9 +447,48 @@ function ImportarTab({ nichos, onDadosMudaram }) {
 
 // ---------- Números ----------
 
+function DeletarNumeroButton({ numero, onDeletado }) {
+  const [confirmando, setConfirmando] = useState(false);
+  const [deletando, setDeletando] = useState(false);
+
+  const deletar = async () => {
+    setDeletando(true);
+    // limpa no Evolution também (libera o nome pra reuso)
+    await supabase.functions.invoke("zap-evolution", { body: { action: "delete", instanceName: numero.instancia } });
+    await supabase.from("zap_entradas").delete().eq("numero_id", numero.id);
+    await supabase.from("zap_numeros").delete().eq("id", numero.id);
+    setDeletando(false);
+    onDeletado();
+  };
+
+  if (confirmando) {
+    return (
+      <div className="flex items-center gap-1.5 justify-end">
+        <span className="text-[11px]" style={{ color: C.sub }}>
+          apaga e os {numero.entrou} grupos voltam pra "sem número"
+        </span>
+        <button onClick={deletar} disabled={deletando} className="px-2 py-1 text-[11px] rounded-[4px] zap-body" style={{ background: C.banido, color: "#fff", opacity: deletando ? 0.6 : 1 }}>
+          {deletando ? "..." : "confirmar"}
+        </button>
+        <button onClick={() => setConfirmando(false)} className="text-[11px]" style={{ color: C.sub }}>cancelar</button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setConfirmando(true)}
+      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body"
+      style={{ border: `1px solid ${C.line}`, color: C.sub }}
+    >
+      <RotateCcw size={12} strokeWidth={2} style={{ transform: "rotate(180deg)" }} />
+      Deletar número
+    </button>
+  );
+}
+
 function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
   const [aberto, setAberto] = useState(true);
-  const [recuperandoId, setRecuperandoId] = useState(null);
   const cobertos = numeros.reduce((a, n) => a + n.entrou, 0);
   const semNumero = Math.max(totalCatalogo - cobertos, 0);
   const capacidadeDisponivel = numeros
@@ -459,33 +545,21 @@ function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
                     <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{n.instancia}</td>
                     <td className="px-4 py-3"><StatusEditor numero={n} onChanged={onRecarregar} /></td>
                     <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>
-                      {n.entrou.toLocaleString("pt-BR")}<span style={{ color: C.sub }}> / {n.limite_grupos.toLocaleString("pt-BR")}</span>
+                      {n.entrou.toLocaleString("pt-BR")}<span style={{ color: C.sub }}> / </span>
+                      <EditableLimite numero={n} campo="limite_grupos" onChanged={onRecarregar} />
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Dosimeter value={n.hoje} max={n.limite_entradas_dia} />
-                        <span className="zap-mono text-[11px]" style={{ color: C.sub }}>{n.hoje}/{n.limite_entradas_dia}</span>
+                        <span className="zap-mono text-[11px]" style={{ color: C.sub }}>
+                          {n.hoje}/<EditableLimite numero={n} campo="limite_entradas_dia" onChanged={onRecarregar} />
+                        </span>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {n.status === "banido" && (
-                        <button
-                          onClick={() => setRecuperandoId(recuperandoId === n.id ? null : n.id)}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body"
-                          style={{ border: `1px solid ${C.banido}55`, color: C.banido }}
-                        >
-                          <RotateCcw size={12} strokeWidth={2} /> Recuperar número
-                        </button>
-                      )}
+                      <DeletarNumeroButton numero={n} onDeletado={onRecarregar} />
                     </td>
                   </tr>
-                  {recuperandoId === n.id && (
-                    <RecuperarNumeroForm
-                      numeroPerdido={n}
-                      onFeito={onRecarregar}
-                      onFechar={() => setRecuperandoId(null)}
-                    />
-                  )}
                 </React.Fragment>
               ))}
             </tbody>
@@ -498,21 +572,32 @@ function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
 
 function RecuperarNumeroForm({ numeroPerdido, onFeito, onFechar }) {
   const [instancia, setInstancia] = useState("");
-  const [salvando, setSalvando] = useState(false);
+  const [conectando, setConectando] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
   const [erro, setErro] = useState(null);
-  const [criado, setCriado] = useState(null);
   const [metodo, setMetodo] = useState("qr");
   const [telefone, setTelefone] = useState("");
 
-  const recuperar = async () => {
-    const nome = instancia.trim();
-    if (!nome) return;
-    setSalvando(true);
+  const iniciarConexao = () => {
+    if (!instancia.trim()) return;
+    if (metodo === "codigo" && !telefone.trim()) return;
     setErro(null);
+    setConectando(true);
+  };
+
+  const cancelarConexao = async () => {
+    setCancelando(true);
+    await supabase.functions.invoke("zap-evolution", { body: { action: "delete", instanceName: instancia.trim() } });
+    setCancelando(false);
+    setConectando(false);
+  };
+
+  const salvarAposConectar = async () => {
+    const nome = instancia.trim();
     try {
       const { data: novoNumero, error: e1 } = await supabase
         .from("zap_numeros")
-        .insert({ instancia: nome, nicho_id: numeroPerdido.nicho_id, status: "aquecendo" })
+        .insert({ instancia: nome, nicho_id: numeroPerdido.nicho_id, status: "ativo" })
         .select()
         .single();
       if (e1) throw e1;
@@ -530,31 +615,28 @@ function RecuperarNumeroForm({ numeroPerdido, onFeito, onFechar }) {
         if (e3) throw e3;
       }
 
-      setCriado({ instancia: nome, total: gruposDoPerdido.length });
       onFeito(gruposDoPerdido.length);
     } catch (e) {
       setErro(e.code === "23505" ? "essa instância já existe" : e.message ?? String(e));
-    } finally {
-      setSalvando(false);
     }
   };
 
-  if (criado) {
+  if (conectando) {
     return (
       <tr>
         <td colSpan={5} className="px-4 py-3" style={{ borderTop: `1px solid ${C.line}`, background: "rgba(225,88,80,0.04)" }}>
           <div className="text-[12px] mb-1" style={{ color: C.text }}>
-            Conectando <span className="zap-mono">{criado.instancia}</span> · {criado.total} grupos pendentes de reentrada
+            Conectando <span className="zap-mono">{instancia.trim()}</span> · {numeroPerdido.entrou} grupos ficam pendentes só depois de conectar
           </div>
           <QrConector
-            instanceName={criado.instancia}
+            instanceName={instancia.trim()}
             phoneNumber={metodo === "codigo" ? telefone.trim() : null}
-            onConectado={async () => {
-              await supabase.from("zap_numeros").update({ status: "ativo" }).eq("instancia", criado.instancia);
-              onFeito(criado.total);
-            }}
+            onConectado={salvarAposConectar}
           />
-          <button onClick={onFechar} className="text-[12px] mt-1" style={{ color: C.sub }}>fechar</button>
+          <button onClick={cancelarConexao} disabled={cancelando} className="text-[12px] mt-1" style={{ color: C.sub }}>
+            {cancelando ? "cancelando..." : "cancelar"}
+          </button>
+          {erro && <div className="text-[11px] mt-2" style={{ color: C.banido }}>{erro}</div>}
         </td>
       </tr>
     );
@@ -574,13 +656,13 @@ function RecuperarNumeroForm({ numeroPerdido, onFeito, onFechar }) {
             autoFocus
             value={instancia}
             onChange={(e) => setInstancia(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && recuperar()}
+            onKeyDown={(e) => e.key === "Enter" && iniciarConexao()}
             placeholder="nome do número novo (ex: zap-08)"
             className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none flex-1 max-w-[240px]"
             style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
           />
-          <button onClick={recuperar} disabled={salvando || !instancia.trim() || (metodo === "codigo" && !telefone.trim())} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
-            {salvando ? "recuperando..." : `Recuperar ${numeroPerdido.entrou} grupos`}
+          <button onClick={iniciarConexao} disabled={!instancia.trim() || (metodo === "codigo" && !telefone.trim())} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B" }}>
+            Conectar
           </button>
           <button onClick={onFechar} className="text-[12px]" style={{ color: C.sub }}>cancelar</button>
         </div>
@@ -706,42 +788,52 @@ function MetodoConexao({ metodo, setMetodo, telefone, setTelefone }) {
 function NovoNumeroForm({ nichos, onCriado, onFechar }) {
   const [instancia, setInstancia] = useState("");
   const [nichoId, setNichoId] = useState(nichos[0]?.id ?? null);
-  const [salvando, setSalvando] = useState(false);
+  const [conectando, setConectando] = useState(false);
   const [erro, setErro] = useState(null);
-  const [criado, setCriado] = useState(null); // { instancia } depois de gravar no banco
   const [metodo, setMetodo] = useState("qr");
   const [telefone, setTelefone] = useState("");
+  const [cancelando, setCancelando] = useState(false);
 
-  const salvar = async () => {
+  const iniciarConexao = () => {
     if (!instancia.trim() || !nichoId) return;
     if (metodo === "codigo" && !telefone.trim()) return;
-    setSalvando(true);
     setErro(null);
-    const { error } = await supabase.from("zap_numeros").insert({ instancia: instancia.trim(), nicho_id: nichoId, status: "aquecendo" });
-    setSalvando(false);
+    setConectando(true);
+  };
+
+  const cancelarConexao = async () => {
+    setCancelando(true);
+    // limpa a instância no Evolution também, pra não travar o nome numa tentativa abandonada
+    await supabase.functions.invoke("zap-evolution", { body: { action: "delete", instanceName: instancia.trim() } });
+    setCancelando(false);
+    setConectando(false);
+  };
+
+  const salvarAposConectar = async () => {
+    const { error } = await supabase
+      .from("zap_numeros")
+      .insert({ instancia: instancia.trim(), nicho_id: nichoId, status: "ativo" });
     if (error) {
       setErro(error.code === "23505" ? "essa instância já existe" : error.message);
       return;
     }
-    setCriado({ instancia: instancia.trim() });
     onCriado();
   };
 
-  if (criado) {
+  if (conectando) {
     return (
       <Card className="p-4 mb-4">
         <div className="text-[12px] mb-1" style={{ color: C.text }}>
-          Conectando <span className="zap-mono">{criado.instancia}</span>
+          Conectando <span className="zap-mono">{instancia.trim()}</span> — só grava no cadastro depois de conectar
         </div>
         <QrConector
-          instanceName={criado.instancia}
+          instanceName={instancia.trim()}
           phoneNumber={metodo === "codigo" ? telefone.trim() : null}
-          onConectado={async () => {
-            await supabase.from("zap_numeros").update({ status: "ativo" }).eq("instancia", criado.instancia);
-            onCriado();
-          }}
+          onConectado={salvarAposConectar}
         />
-        <button onClick={onFechar} className="text-[12px] mt-2" style={{ color: C.sub }}>fechar</button>
+        <button onClick={cancelarConexao} disabled={cancelando} className="text-[12px] mt-2" style={{ color: C.sub }}>
+          {cancelando ? "cancelando..." : "cancelar"}
+        </button>
       </Card>
     );
   }
@@ -766,8 +858,8 @@ function NovoNumeroForm({ nichos, onCriado, onFechar }) {
         >
           {nichos.map((n) => <option key={n.id} value={n.id}>{n.nome}</option>)}
         </select>
-        <button onClick={salvar} disabled={salvando || !instancia.trim() || !nichoId || (metodo === "codigo" && !telefone.trim())} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
-          {salvando ? "salvando..." : "Salvar"}
+        <button onClick={iniciarConexao} disabled={!instancia.trim() || !nichoId || (metodo === "codigo" && !telefone.trim())} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B" }}>
+          Conectar
         </button>
         <button onClick={onFechar} className="text-[12px]" style={{ color: C.sub }}>cancelar</button>
       </div>
