@@ -304,13 +304,18 @@ function ImportarTab({ nichos, onDadosMudaram }) {
     setErro(null);
     setResultado(null);
     const rows = linkList.map((link_convite) => ({ link_convite, nicho_id: nichoId }));
-    const { data, error } = await supabase.from("zap_grupos").insert(rows).select("id");
+    const { data, error } = await supabase
+      .from("zap_grupos")
+      .upsert(rows, { onConflict: "link_convite", ignoreDuplicates: true })
+      .select("id");
     setImportando(false);
     if (error) {
       setErro(error.message);
       return;
     }
-    setResultado(data.length);
+    const novos = data.length;
+    const repetidos = linkList.length - novos;
+    setResultado({ novos, repetidos });
     setLinks("");
     onDadosMudaram();
   };
@@ -351,8 +356,15 @@ function ImportarTab({ nichos, onDadosMudaram }) {
         </div>
         {erro && <ErroAviso mensagem={erro} />}
         {resultado !== null && (
-          <div className="text-[12px] mt-3 flex items-center gap-1.5" style={{ color: C.ativo }}>
-            <CheckCircle2 size={13} /> {resultado} {resultado === 1 ? "grupo importado" : "grupos importados"}
+          <div className="mt-3 space-y-1">
+            <div className="text-[12px] flex items-center gap-1.5" style={{ color: C.ativo }}>
+              <CheckCircle2 size={13} /> {resultado.novos} {resultado.novos === 1 ? "grupo novo importado" : "grupos novos importados"}
+            </div>
+            {resultado.repetidos > 0 && (
+              <div className="text-[12px] flex items-center gap-1.5" style={{ color: C.sub }}>
+                <AlertTriangle size={12} /> {resultado.repetidos} já {resultado.repetidos === 1 ? "estava" : "estavam"} no catálogo — ignorado{resultado.repetidos === 1 ? "" : "s"}
+              </div>
+            )}
           </div>
         )}
       </Card>
