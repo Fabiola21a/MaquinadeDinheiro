@@ -501,6 +501,8 @@ function RecuperarNumeroForm({ numeroPerdido, onFeito, onFechar }) {
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
   const [criado, setCriado] = useState(null);
+  const [metodo, setMetodo] = useState("qr");
+  const [telefone, setTelefone] = useState("");
 
   const recuperar = async () => {
     const nome = instancia.trim();
@@ -546,6 +548,7 @@ function RecuperarNumeroForm({ numeroPerdido, onFeito, onFechar }) {
           </div>
           <QrConector
             instanceName={criado.instancia}
+            phoneNumber={metodo === "codigo" ? telefone.trim() : null}
             onConectado={async () => {
               await supabase.from("zap_numeros").update({ status: "ativo" }).eq("instancia", criado.instancia);
               onFeito(criado.total);
@@ -565,6 +568,7 @@ function RecuperarNumeroForm({ numeroPerdido, onFeito, onFechar }) {
           <span style={{ color: C.text }}>{numeroPerdido.entrou}</span> grupos onde ele já tinha entrado vão ficar
           marcados como <span className="zap-mono">pendente</span> pro número novo, não o catálogo inteiro.
         </div>
+        <MetodoConexao metodo={metodo} setMetodo={setMetodo} telefone={telefone} setTelefone={setTelefone} />
         <div className="flex items-center gap-2">
           <input
             autoFocus
@@ -575,7 +579,7 @@ function RecuperarNumeroForm({ numeroPerdido, onFeito, onFechar }) {
             className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none flex-1 max-w-[240px]"
             style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
           />
-          <button onClick={recuperar} disabled={salvando || !instancia.trim()} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
+          <button onClick={recuperar} disabled={salvando || !instancia.trim() || (metodo === "codigo" && !telefone.trim())} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
             {salvando ? "recuperando..." : `Recuperar ${numeroPerdido.entrou} grupos`}
           </button>
           <button onClick={onFechar} className="text-[12px]" style={{ color: C.sub }}>cancelar</button>
@@ -586,9 +590,10 @@ function RecuperarNumeroForm({ numeroPerdido, onFeito, onFechar }) {
   );
 }
 
-function QrConector({ instanceName, onConectado }) {
+function QrConector({ instanceName, phoneNumber, onConectado }) {
   const [qr, setQr] = useState(null);
-  const [status, setStatus] = useState("gerando_qr"); // gerando_qr | aguardando | conectado | erro
+  const [pairingCode, setPairingCode] = useState(null);
+  const [status, setStatus] = useState("gerando"); // gerando | aguardando | conectado | erro
   const [erro, setErro] = useState(null);
 
   useEffect(() => {
@@ -597,7 +602,7 @@ function QrConector({ instanceName, onConectado }) {
 
     const iniciar = async () => {
       const { data, error } = await supabase.functions.invoke("zap-evolution", {
-        body: { action: "create", instanceName },
+        body: { action: "create", instanceName, phoneNumber: phoneNumber || undefined },
       });
       if (cancelado) return;
       if (error || data?.error) {
@@ -606,6 +611,7 @@ function QrConector({ instanceName, onConectado }) {
         return;
       }
       setQr(data.qrcode);
+      setPairingCode(data.pairingCode);
       setStatus("aguardando");
 
       poll = setInterval(async () => {
@@ -613,7 +619,7 @@ function QrConector({ instanceName, onConectado }) {
           body: { action: "status", instanceName },
         });
         if (cancelado) return;
-        if (e2 || s?.error) return; // ignora falha pontual do polling
+        if (e2 || s?.error) return;
         if (s.state === "open") {
           clearInterval(poll);
           setStatus("conectado");
@@ -624,7 +630,7 @@ function QrConector({ instanceName, onConectado }) {
 
     iniciar();
     return () => { cancelado = true; if (poll) clearInterval(poll); };
-  }, [instanceName]);
+  }, [instanceName, phoneNumber]);
 
   if (status === "erro") return <ErroAviso mensagem={`Erro ao conectar no Evolution: ${erro}`} />;
   if (status === "conectado") {
@@ -636,8 +642,18 @@ function QrConector({ instanceName, onConectado }) {
   }
   return (
     <div className="flex flex-col items-center gap-2 py-3">
-      {status === "gerando_qr" && <Spinner label="Gerando QR code..." />}
-      {status === "aguardando" && qr && (
+      {status === "gerando" && <Spinner label={phoneNumber ? "Gerando código..." : "Gerando QR code..."} />}
+      {status === "aguardando" && pairingCode && (
+        <>
+          <div className="zap-mono text-[24px] tracking-[0.15em] px-4 py-2 rounded-[4px]" style={{ background: "rgba(255,255,255,0.06)", color: C.text }}>
+            {pairingCode}
+          </div>
+          <span className="text-[11px] zap-body text-center max-w-[220px]" style={{ color: C.sub }}>
+            No WhatsApp do computador: Aparelhos conectados → Conectar com número de telefone → digite esse código · verificando a cada 4s
+          </span>
+        </>
+      )}
+      {status === "aguardando" && !pairingCode && qr && (
         <>
           <img
             src={qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`}
@@ -648,8 +664,40 @@ function QrConector({ instanceName, onConectado }) {
           <span className="text-[11px] zap-body" style={{ color: C.sub }}>Escaneie no WhatsApp do celular · verificando a cada 4s</span>
         </>
       )}
-      {status === "aguardando" && !qr && (
-        <ErroAviso mensagem="Instância criada, mas o Evolution não devolveu QR code. Confira o painel do Evolution direto." />
+      {status === "aguardando" && !pairingCode && !qr && (
+        <ErroAviso mensagem="Instância criada, mas o Evolution não devolveu QR/código. Confira o painel do Evolution direto." />
+      )}
+    </div>
+  );
+}
+
+function MetodoConexao({ metodo, setMetodo, telefone, setTelefone }) {
+  return (
+    <div className="mb-3">
+      <div className="flex gap-2 mb-2">
+        <button
+          onClick={() => setMetodo("qr")}
+          className="px-3 py-1.5 rounded-[4px] text-[11px] zap-mono uppercase"
+          style={{ border: `1px solid ${metodo === "qr" ? C.ativo : C.line}`, background: metodo === "qr" ? "rgba(53,196,138,0.1)" : "transparent", color: metodo === "qr" ? C.ativo : C.sub }}
+        >
+          QR code
+        </button>
+        <button
+          onClick={() => setMetodo("codigo")}
+          className="px-3 py-1.5 rounded-[4px] text-[11px] zap-mono uppercase"
+          style={{ border: `1px solid ${metodo === "codigo" ? C.ativo : C.line}`, background: metodo === "codigo" ? "rgba(53,196,138,0.1)" : "transparent", color: metodo === "codigo" ? C.ativo : C.sub }}
+        >
+          Código (Whatsapp no PC)
+        </button>
+      </div>
+      {metodo === "codigo" && (
+        <input
+          value={telefone}
+          onChange={(e) => setTelefone(e.target.value)}
+          placeholder="número com DDI, ex: 5511999999999"
+          className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none w-full"
+          style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
+        />
       )}
     </div>
   );
@@ -661,9 +709,12 @@ function NovoNumeroForm({ nichos, onCriado, onFechar }) {
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
   const [criado, setCriado] = useState(null); // { instancia } depois de gravar no banco
+  const [metodo, setMetodo] = useState("qr");
+  const [telefone, setTelefone] = useState("");
 
   const salvar = async () => {
     if (!instancia.trim() || !nichoId) return;
+    if (metodo === "codigo" && !telefone.trim()) return;
     setSalvando(true);
     setErro(null);
     const { error } = await supabase.from("zap_numeros").insert({ instancia: instancia.trim(), nicho_id: nichoId, status: "aquecendo" });
@@ -684,6 +735,7 @@ function NovoNumeroForm({ nichos, onCriado, onFechar }) {
         </div>
         <QrConector
           instanceName={criado.instancia}
+          phoneNumber={metodo === "codigo" ? telefone.trim() : null}
           onConectado={async () => {
             await supabase.from("zap_numeros").update({ status: "ativo" }).eq("instancia", criado.instancia);
             onCriado();
@@ -696,6 +748,7 @@ function NovoNumeroForm({ nichos, onCriado, onFechar }) {
 
   return (
     <Card className="p-4 mb-4">
+      <MetodoConexao metodo={metodo} setMetodo={setMetodo} telefone={telefone} setTelefone={setTelefone} />
       <div className="flex items-center gap-3 flex-wrap">
         <input
           autoFocus
@@ -713,7 +766,7 @@ function NovoNumeroForm({ nichos, onCriado, onFechar }) {
         >
           {nichos.map((n) => <option key={n.id} value={n.id}>{n.nome}</option>)}
         </select>
-        <button onClick={salvar} disabled={salvando || !instancia.trim() || !nichoId} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
+        <button onClick={salvar} disabled={salvando || !instancia.trim() || !nichoId || (metodo === "codigo" && !telefone.trim())} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
           {salvando ? "salvando..." : "Salvar"}
         </button>
         <button onClick={onFechar} className="text-[12px]" style={{ color: C.sub }}>cancelar</button>
