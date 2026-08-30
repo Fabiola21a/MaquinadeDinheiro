@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Upload, Smartphone, Activity, Radio, RotateCcw,
-  Play, Pause, AlertTriangle, ChevronRight, ChevronDown, Plus, CheckCircle2
+  Play, Pause, AlertTriangle, ChevronRight, ChevronDown, Plus, CheckCircle2, Loader2
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { supabase } from "./lib/supabaseClient";
 
 const FONTS = (
   <style>{`
@@ -13,31 +14,10 @@ const FONTS = (
     .zap-mono { font-family: 'JetBrains Mono', monospace; }
     @keyframes zap-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
     .zap-live { animation: zap-pulse 1.6s ease-in-out infinite; }
+    @keyframes zap-spin { to { transform: rotate(360deg); } }
+    .zap-spin { animation: zap-spin 0.8s linear infinite; }
   `}</style>
 );
-
-// ---- mock data (preview — dados reais virão do Supabase em produção) ----
-const NICHOS_EXISTENTES = ["BR", "US"];
-const CATALOGO_POR_NICHO = { BR: 3400, US: 1412 };
-
-const NUMEROS = [
-  { id: 1, instancia: "zap-01", nicho: "BR", status: "ativo",     entrou: 940,  limite: 1000, hoje: 74,  meta_dia: 100 },
-  { id: 2, instancia: "zap-02", nicho: "BR", status: "ativo",     entrou: 612,  limite: 1000, hoje: 100, meta_dia: 100 },
-  { id: 3, instancia: "zap-03", nicho: "BR", status: "aquecendo", entrou: 180,  limite: 1000, hoje: 41,  meta_dia: 100 },
-  { id: 4, instancia: "zap-04", nicho: "BR", status: "cheio",     entrou: 1000, limite: 1000, hoje: 0,   meta_dia: 100 },
-  { id: 5, instancia: "zap-05", nicho: "BR", status: "banido",    entrou: 337,  limite: 1000, hoje: 0,   meta_dia: 100 },
-  { id: 6, instancia: "zap-06", nicho: "US", status: "ativo",     entrou: 205,  limite: 1000, hoje: 88,  meta_dia: 100 },
-];
-
-const RITMO_7D = [
-  { dia: "23/08", entradas: 480 },
-  { dia: "24/08", entradas: 512 },
-  { dia: "25/08", entradas: 397 },
-  { dia: "26/08", entradas: 505 },
-  { dia: "27/08", entradas: 460 },
-  { dia: "28/08", entradas: 420 },
-  { dia: "29/08", entradas: 303 },
-];
 
 const C = {
   bg: "#0A0C0E", panel: "#12151A", line: "rgba(255,255,255,0.07)",
@@ -53,13 +33,55 @@ const STATUS_STYLE = {
   pausado:   { color: C.pausado,   label: "pausado" },
 };
 
+// ---------- data layer ----------
+
+function useZapData() {
+  const [nichos, setNichos] = useState([]);
+  const [numeros, setNumeros] = useState([]);
+  const [cobertura, setCobertura] = useState([]);
+  const [diarias, setDiarias] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState(null);
+
+  const carregar = useCallback(async () => {
+    setLoading(true);
+    setErro(null);
+    try {
+      const [n, num, cov, dia] = await Promise.all([
+        supabase.from("zap_nichos").select("id, nome").order("nome"),
+        supabase.from("zap_vw_numeros").select("*").order("instancia"),
+        supabase.from("zap_vw_nichos_cobertura").select("*"),
+        supabase.from("zap_vw_entradas_diarias").select("*").order("dia", { ascending: true }),
+      ]);
+      if (n.error) throw n.error;
+      if (num.error) throw num.error;
+      if (cov.error) throw cov.error;
+      if (dia.error) throw dia.error;
+      setNichos(n.data ?? []);
+      setNumeros(num.data ?? []);
+      setCobertura(cov.data ?? []);
+      setDiarias(dia.data ?? []);
+    } catch (e) {
+      setErro(e.message ?? String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { carregar(); }, [carregar]);
+
+  return { nichos, numeros, cobertura, diarias, loading, erro, recarregar: carregar };
+}
+
+// ---------- ui bits ----------
+
 function Led({ color, live = false }) {
   return <span className={`inline-block h-[7px] w-[7px] rounded-full ${live ? "zap-live" : ""}`} style={{ background: color, boxShadow: `0 0 6px ${color}99` }} />;
 }
 
 function Dosimeter({ value, max }) {
   const segments = 20;
-  const filled = Math.round((value / max) * segments);
+  const filled = Math.round((value / Math.max(max, 1)) * segments);
   return (
     <div className="flex gap-[2px]">
       {Array.from({ length: segments }).map((_, i) => (
@@ -87,24 +109,54 @@ function NichoTag({ nicho }) {
   );
 }
 
-function CoverageStrip() {
-  const total = NUMEROS.reduce((a, n) => a + n.entrou, 0);
-  const catalogoTotal = Object.values(CATALOGO_POR_NICHO).reduce((a, b) => a + b, 0);
-  const pct = total / catalogoTotal;
+function Spinner({ label }) {
+  return (
+    <div className="flex items-center gap-2 py-10 justify-center" style={{ color: C.sub }}>
+      <Loader2 size={14} className="zap-spin" />
+      <span className="text-[12px] zap-body">{label ?? "Carregando..."}</span>
+    </div>
+  );
+}
+
+function ErroAviso({ mensagem }) {
+  return (
+    <div className="flex items-center gap-2 px-4 py-3 rounded-[4px] text-[12px] zap-body mb-4" style={{ color: C.banido, background: "rgba(225,88,80,0.08)", border: `1px solid ${C.banido}33` }}>
+      <AlertTriangle size={13} /> {mensagem}
+    </div>
+  );
+}
+
+function EmptyState({ titulo, sub }) {
+  return (
+    <div className="py-12 text-center">
+      <div className="text-[13px] zap-body mb-1" style={{ color: C.text }}>{titulo}</div>
+      <div className="text-[12px] zap-body" style={{ color: C.sub }}>{sub}</div>
+    </div>
+  );
+}
+
+function CoverageStrip({ numeros, cobertura, loading }) {
+  const total = numeros.reduce((a, n) => a + n.entrou, 0);
+  const catalogoTotal = cobertura.reduce((a, c) => a + c.total_grupos, 0);
+  const pct = catalogoTotal > 0 ? total / catalogoTotal : 0;
   const ticks = 25;
   return (
     <div className="rounded-[6px] px-6 py-5 mb-8" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
       <div className="flex items-end justify-between mb-4">
         <div>
           <div className="text-[10px] zap-mono uppercase tracking-[0.16em] mb-1.5" style={{ color: C.sub }}>Cobertura do catálogo</div>
-          <div className="flex items-baseline gap-2">
-            <span className="zap-display text-[32px] leading-none font-semibold zap-mono tabular-nums" style={{ color: C.text }}>{total.toLocaleString("pt-BR")}</span>
-            <span className="text-[15px] zap-mono" style={{ color: C.sub }}>/ {catalogoTotal.toLocaleString("pt-BR")} grupos</span>
-          </div>
+          {loading ? (
+            <div className="text-[13px] zap-mono" style={{ color: C.sub }}>carregando...</div>
+          ) : (
+            <div className="flex items-baseline gap-2">
+              <span className="zap-display text-[32px] leading-none font-semibold zap-mono tabular-nums" style={{ color: C.text }}>{total.toLocaleString("pt-BR")}</span>
+              <span className="text-[15px] zap-mono" style={{ color: C.sub }}>/ {catalogoTotal.toLocaleString("pt-BR")} grupos</span>
+            </div>
+          )}
         </div>
         <div className="flex gap-1.5">
-          {NUMEROS.map((n) => (
-            <div key={n.id} title={`${n.instancia} · ${n.nicho} · ${STATUS_STYLE[n.status].label}`} className="w-[10px] h-6 rounded-[2px]" style={{ background: STATUS_STYLE[n.status].color, opacity: n.status === "cheio" ? 0.5 : 1 }} />
+          {numeros.map((n) => (
+            <div key={n.id} title={`${n.instancia} · ${n.nicho} · ${STATUS_STYLE[n.status]?.label ?? n.status}`} className="w-[10px] h-6 rounded-[2px]" style={{ background: STATUS_STYLE[n.status]?.color ?? C.pausado, opacity: n.status === "cheio" ? 0.5 : 1 }} />
           ))}
         </div>
       </div>
@@ -162,47 +214,72 @@ function Header({ title, sub }) {
   );
 }
 
-function NichoSelector({ value, onChange }) {
+// ---------- Importar ----------
+
+function NichoSelector({ nichos, value, onChange, onCriado }) {
   const [criandoNovo, setCriandoNovo] = useState(false);
   const [novoNicho, setNovoNicho] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState(null);
+
+  const criar = async () => {
+    const nome = novoNicho.trim().toUpperCase();
+    if (!nome) return;
+    setSalvando(true);
+    setErro(null);
+    const { data, error } = await supabase.from("zap_nichos").insert({ nome }).select().single();
+    setSalvando(false);
+    if (error) {
+      setErro(error.code === "23505" ? "esse nicho já existe" : error.message);
+      return;
+    }
+    onCriado(data);
+    onChange(data.id);
+    setCriandoNovo(false);
+    setNovoNicho("");
+  };
 
   if (criandoNovo) {
     return (
-      <div className="flex items-center gap-2">
-        <input
-          autoFocus
-          value={novoNicho}
-          onChange={(e) => setNovoNicho(e.target.value.toUpperCase())}
-          placeholder="ex: FR, ES, MX..."
-          className="px-3 py-2 rounded-[4px] text-[13px] zap-mono outline-none w-32"
-          style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.ativo}55`, color: C.text }}
-        />
-        <button
-          onClick={() => { if (novoNicho.trim()) { onChange(novoNicho.trim()); setCriandoNovo(false); setNovoNicho(""); } }}
-          className="text-[12px] px-2.5 py-2 rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B" }}
-        >
-          Criar
-        </button>
-        <button onClick={() => setCriandoNovo(false)} className="text-[12px]" style={{ color: C.sub }}>cancelar</button>
+      <div>
+        <div className="flex items-center gap-2">
+          <input
+            autoFocus
+            value={novoNicho}
+            onChange={(e) => setNovoNicho(e.target.value.toUpperCase())}
+            onKeyDown={(e) => e.key === "Enter" && criar()}
+            placeholder="ex: FR, ES, MX..."
+            className="px-3 py-2 rounded-[4px] text-[13px] zap-mono outline-none w-32"
+            style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.ativo}55`, color: C.text }}
+          />
+          <button onClick={criar} disabled={salvando} className="text-[12px] px-2.5 py-2 rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
+            {salvando ? "criando..." : "Criar"}
+          </button>
+          <button onClick={() => { setCriandoNovo(false); setErro(null); }} className="text-[12px]" style={{ color: C.sub }}>cancelar</button>
+        </div>
+        {erro && <div className="text-[11px] mt-1.5" style={{ color: C.banido }}>{erro}</div>}
       </div>
     );
   }
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      {NICHOS_EXISTENTES.map((n) => (
+      {nichos.length === 0 && (
+        <span className="text-[12px] zap-body" style={{ color: C.sub }}>nenhum nicho criado ainda</span>
+      )}
+      {nichos.map((n) => (
         <button
-          key={n}
-          onClick={() => onChange(n)}
+          key={n.id}
+          onClick={() => onChange(n.id)}
           className="px-3 py-2 rounded-[4px] text-[12px] zap-mono uppercase transition-colors"
           style={{
-            border: `1px solid ${value === n ? C.ativo : C.line}`,
-            background: value === n ? "rgba(53,196,138,0.1)" : "transparent",
-            color: value === n ? C.ativo : C.sub,
+            border: `1px solid ${value === n.id ? C.ativo : C.line}`,
+            background: value === n.id ? "rgba(53,196,138,0.1)" : "transparent",
+            color: value === n.id ? C.ativo : C.sub,
           }}
         >
-          {value === n && <CheckCircle2 size={11} className="inline mr-1 -mt-0.5" />}
-          {n} <span style={{ color: C.sub, opacity: 0.7 }}>· {CATALOGO_POR_NICHO[n]?.toLocaleString("pt-BR") ?? 0}</span>
+          {value === n.id && <CheckCircle2 size={11} className="inline mr-1 -mt-0.5" />}
+          {n.nome}
         </button>
       ))}
       <button onClick={() => setCriandoNovo(true)} className="flex items-center gap-1 px-3 py-2 rounded-[4px] text-[12px] zap-body transition-colors" style={{ border: `1px dashed ${C.line}`, color: C.sub }}>
@@ -212,10 +289,31 @@ function NichoSelector({ value, onChange }) {
   );
 }
 
-function ImportarTab() {
+function ImportarTab({ nichos, onDadosMudaram }) {
   const [links, setLinks] = useState("");
-  const [nicho, setNicho] = useState(null);
+  const [nichoId, setNichoId] = useState(null);
+  const [importando, setImportando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState(null);
   const count = links.split("\n").map((l) => l.trim()).filter(Boolean).length;
+
+  const importar = async () => {
+    const linkList = [...new Set(links.split("\n").map((l) => l.trim()).filter(Boolean))];
+    if (!nichoId || linkList.length === 0) return;
+    setImportando(true);
+    setErro(null);
+    setResultado(null);
+    const rows = linkList.map((link_convite) => ({ link_convite, nicho_id: nichoId }));
+    const { data, error } = await supabase.from("zap_grupos").insert(rows).select("id");
+    setImportando(false);
+    if (error) {
+      setErro(error.message);
+      return;
+    }
+    setResultado(data.length);
+    setLinks("");
+    onDadosMudaram();
+  };
 
   return (
     <div className="max-w-[680px]">
@@ -225,19 +323,14 @@ function ImportarTab() {
           <div className="text-[12px] zap-body mb-2.5" style={{ color: C.text }}>
             Nicho desses grupos <span style={{ color: C.sub }}>— obrigatório</span>
           </div>
-          <NichoSelector value={nicho} onChange={setNicho} />
-          {!nicho && (
+          <NichoSelector nichos={nichos} value={nichoId} onChange={setNichoId} onCriado={onDadosMudaram} />
+          {!nichoId && (
             <div className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: C.aquecendo }}>
               <AlertTriangle size={11} /> selecione um nicho existente ou crie um novo antes de importar
             </div>
           )}
         </div>
 
-        <div className="rounded-[4px] py-8 flex flex-col items-center justify-center mb-4" style={{ border: `1px dashed ${C.line}` }}>
-          <Upload size={20} className="mb-2" style={{ color: C.sub, opacity: 0.6 }} strokeWidth={1.5} />
-          <div className="text-[13px] zap-body" style={{ color: C.sub }}>Arraste o arquivo .xlsx ou .csv aqui</div>
-          <div className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.25)" }}>ou cole os links abaixo</div>
-        </div>
         <textarea
           value={links}
           onChange={(e) => setLinks(e.target.value)}
@@ -248,26 +341,34 @@ function ImportarTab() {
         <div className="flex items-center justify-between mt-4">
           <span className="text-[12px] zap-mono" style={{ color: C.sub }}>{count} {count === 1 ? "link detectado" : "links detectados"}</span>
           <button
-            disabled={!nicho || count === 0}
+            onClick={importar}
+            disabled={!nichoId || count === 0 || importando}
             className="px-4 py-2 text-[13px] rounded-[4px] font-medium zap-body transition-opacity"
-            style={{ background: C.ativo, color: "#06110B", opacity: !nicho || count === 0 ? 0.35 : 1, cursor: !nicho || count === 0 ? "not-allowed" : "pointer" }}
+            style={{ background: C.ativo, color: "#06110B", opacity: !nichoId || count === 0 || importando ? 0.35 : 1, cursor: !nichoId || count === 0 || importando ? "not-allowed" : "pointer" }}
           >
-            Importar para o catálogo {nicho ? `· ${nicho}` : ""}
+            {importando ? "importando..." : "Importar para o catálogo"}
           </button>
         </div>
+        {erro && <ErroAviso mensagem={erro} />}
+        {resultado !== null && (
+          <div className="text-[12px] mt-3 flex items-center gap-1.5" style={{ color: C.ativo }}>
+            <CheckCircle2 size={13} /> {resultado} {resultado === 1 ? "grupo importado" : "grupos importados"}
+          </div>
+        )}
       </Card>
     </div>
   );
 }
 
-function NichoBlock({ nicho, numeros }) {
+// ---------- Números ----------
+
+function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
   const [aberto, setAberto] = useState(true);
-  const totalCatalogo = CATALOGO_POR_NICHO[nicho] ?? 0;
   const cobertos = numeros.reduce((a, n) => a + n.entrou, 0);
   const semNumero = Math.max(totalCatalogo - cobertos, 0);
   const capacidadeDisponivel = numeros
     .filter((n) => n.status === "ativo" || n.status === "aquecendo")
-    .reduce((a, n) => a + (n.limite - n.entrou), 0);
+    .reduce((a, n) => a + (n.limite_grupos - n.entrou), 0);
   const faltaCapacidade = Math.max(semNumero - capacidadeDisponivel, 0);
   const numerosASugerir = Math.ceil(faltaCapacidade / 1000);
 
@@ -299,133 +400,234 @@ function NichoBlock({ nicho, numeros }) {
       </button>
 
       {aberto && (
-        <table className="w-full text-[13px]">
-          <thead>
-            <tr className="text-left zap-mono text-[10px] uppercase tracking-wide" style={{ color: C.sub }}>
-              <th className="px-4 py-3 font-normal">Instância</th>
-              <th className="px-4 py-3 font-normal">Status</th>
-              <th className="px-4 py-3 font-normal">Grupos</th>
-              <th className="px-4 py-3 font-normal">Ritmo hoje</th>
-              <th className="px-4 py-3 font-normal"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {numeros.map((n) => (
-              <tr key={n.id} style={{ borderTop: `1px solid ${C.line}` }}>
-                <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{n.instancia}</td>
-                <td className="px-4 py-3"><StatusPill status={n.status} /></td>
-                <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>
-                  {n.entrou.toLocaleString("pt-BR")}<span style={{ color: C.sub }}> / {n.limite.toLocaleString("pt-BR")}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <Dosimeter value={n.hoje} max={n.meta_dia} />
-                    <span className="zap-mono text-[11px]" style={{ color: C.sub }}>{n.hoje}/{n.meta_dia}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-right">
-                  {n.status === "banido" && (
-                    <button className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body" style={{ border: `1px solid ${C.banido}55`, color: C.banido }}>
-                      <RotateCcw size={12} strokeWidth={2} /> Recuperar número
-                    </button>
-                  )}
-                </td>
+        numeros.length === 0 ? (
+          <div className="px-4 py-6 text-[12px] zap-body" style={{ color: C.sub }}>Nenhum número cadastrado neste nicho ainda.</div>
+        ) : (
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="text-left zap-mono text-[10px] uppercase tracking-wide" style={{ color: C.sub }}>
+                <th className="px-4 py-3 font-normal">Instância</th>
+                <th className="px-4 py-3 font-normal">Status</th>
+                <th className="px-4 py-3 font-normal">Grupos</th>
+                <th className="px-4 py-3 font-normal">Ritmo hoje</th>
+                <th className="px-4 py-3 font-normal"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {numeros.map((n) => (
+                <tr key={n.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                  <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{n.instancia}</td>
+                  <td className="px-4 py-3"><StatusPill status={n.status} /></td>
+                  <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>
+                    {n.entrou.toLocaleString("pt-BR")}<span style={{ color: C.sub }}> / {n.limite_grupos.toLocaleString("pt-BR")}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <Dosimeter value={n.hoje} max={n.limite_entradas_dia} />
+                      <span className="zap-mono text-[11px]" style={{ color: C.sub }}>{n.hoje}/{n.limite_entradas_dia}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {n.status === "banido" && (
+                      <button className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body" style={{ border: `1px solid ${C.banido}55`, color: C.banido }}>
+                        <RotateCcw size={12} strokeWidth={2} /> Recuperar número
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
       )}
     </Card>
   );
 }
 
-function NumerosTab() {
+function NovoNumeroForm({ nichos, onCriado, onFechar }) {
+  const [instancia, setInstancia] = useState("");
+  const [nichoId, setNichoId] = useState(nichos[0]?.id ?? null);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState(null);
+
+  const salvar = async () => {
+    if (!instancia.trim() || !nichoId) return;
+    setSalvando(true);
+    setErro(null);
+    const { error } = await supabase.from("zap_numeros").insert({ instancia: instancia.trim(), nicho_id: nichoId });
+    setSalvando(false);
+    if (error) {
+      setErro(error.code === "23505" ? "essa instância já existe" : error.message);
+      return;
+    }
+    onCriado();
+    onFechar();
+  };
+
+  return (
+    <Card className="p-4 mb-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <input
+          autoFocus
+          value={instancia}
+          onChange={(e) => setInstancia(e.target.value)}
+          placeholder="nome da instância (ex: zap-07)"
+          className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none flex-1 min-w-[160px]"
+          style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
+        />
+        <select
+          value={nichoId ?? ""}
+          onChange={(e) => setNichoId(Number(e.target.value))}
+          className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none"
+          style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
+        >
+          {nichos.map((n) => <option key={n.id} value={n.id}>{n.nome}</option>)}
+        </select>
+        <button onClick={salvar} disabled={salvando || !instancia.trim() || !nichoId} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
+          {salvando ? "salvando..." : "Salvar"}
+        </button>
+        <button onClick={onFechar} className="text-[12px]" style={{ color: C.sub }}>cancelar</button>
+      </div>
+      {erro && <div className="text-[11px] mt-2" style={{ color: C.banido }}>{erro}</div>}
+    </Card>
+  );
+}
+
+function NumerosTab({ nichos, numeros, cobertura, loading, onRecarregar }) {
+  const [criando, setCriando] = useState(false);
+
   const porNicho = useMemo(() => {
     const grupos = {};
-    NUMEROS.forEach((n) => { (grupos[n.nicho] ||= []).push(n); });
+    numeros.forEach((n) => { (grupos[n.nicho] ||= []).push(n); });
     return grupos;
-  }, []);
+  }, [numeros]);
+
+  const totalPorNicho = useMemo(() => {
+    const m = {};
+    cobertura.forEach((c) => { m[c.nome] = c.total_grupos; });
+    return m;
+  }, [cobertura]);
+
+  const nichosComNumero = Object.keys(porNicho);
+  const nichosSemNumero = nichos.filter((n) => !nichosComNumero.includes(n.nome));
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <Header title="Números" sub={`${NUMEROS.length} números cadastrados · limite de 1.000 grupos e 100 entradas/dia cada, por nicho`} />
-        <button className="px-3 py-2 text-[12px] rounded-[4px] zap-body transition-colors shrink-0" style={{ border: `1px solid ${C.line}`, color: C.sub }}>
+        <Header title="Números" sub={`${numeros.length} números cadastrados · limite de 1.000 grupos e 100 entradas/dia cada, por nicho`} />
+        <button onClick={() => setCriando((c) => !c)} disabled={nichos.length === 0} className="px-3 py-2 text-[12px] rounded-[4px] zap-body transition-colors shrink-0" style={{ border: `1px solid ${C.line}`, color: C.sub, opacity: nichos.length === 0 ? 0.4 : 1 }}>
           + Cadastrar número
         </button>
       </div>
-      {Object.entries(porNicho).map(([nicho, numeros]) => (
-        <NichoBlock key={nicho} nicho={nicho} numeros={numeros} />
-      ))}
+
+      {criando && <NovoNumeroForm nichos={nichos} onCriado={onRecarregar} onFechar={() => setCriando(false)} />}
+
+      {loading ? (
+        <Spinner />
+      ) : nichos.length === 0 ? (
+        <EmptyState titulo="Nenhum nicho criado ainda" sub="Crie um nicho na aba Importar grupos antes de cadastrar números." />
+      ) : (
+        <>
+          {nichosComNumero.map((nicho) => (
+            <NichoBlock key={nicho} nicho={nicho} numeros={porNicho[nicho]} totalCatalogo={totalPorNicho[nicho] ?? 0} onRecarregar={onRecarregar} />
+          ))}
+          {nichosSemNumero.map((n) => (
+            <NichoBlock key={n.id} nicho={n.nome} numeros={[]} totalCatalogo={totalPorNicho[n.nome] ?? 0} onRecarregar={onRecarregar} />
+          ))}
+        </>
+      )}
     </div>
   );
 }
 
-function ProgressoTab() {
-  const total = NUMEROS.reduce((a, n) => a + n.entrou, 0);
-  const catalogoTotal = Object.values(CATALOGO_POR_NICHO).reduce((a, b) => a + b, 0);
+// ---------- Progresso ----------
+
+function ProgressoTab({ numeros, cobertura, diarias, loading }) {
+  const total = numeros.reduce((a, n) => a + n.entrou, 0);
+  const catalogoTotal = cobertura.reduce((a, c) => a + c.total_grupos, 0);
+
+  const chartData = diarias.map((d) => ({
+    dia: new Date(d.dia).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+    entradas: d.entradas,
+  }));
+
   return (
     <div>
       <Header title="Progresso de entrada" sub={`${total.toLocaleString("pt-BR")} de ${catalogoTotal.toLocaleString("pt-BR")} grupos do catálogo já têm um número dentro`} />
       <Card className="p-5 mb-4">
-        <div className="zap-mono text-[10px] uppercase tracking-wide mb-3" style={{ color: C.sub }}>Entradas por dia — últimos 7 dias</div>
-        <div className="h-[180px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={RITMO_7D} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-              <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
-              <XAxis dataKey="dia" tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 4, fontSize: 12 }} labelStyle={{ color: "rgba(255,255,255,0.6)" }} />
-              <Line type="monotone" dataKey="entradas" stroke={C.ativo} strokeWidth={2} dot={{ r: 3, fill: C.ativo }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        <div className="zap-mono text-[10px] uppercase tracking-wide mb-3" style={{ color: C.sub }}>Entradas por dia</div>
+        {loading ? (
+          <Spinner />
+        ) : chartData.length === 0 ? (
+          <EmptyState titulo="Ainda sem entradas registradas" sub="O gráfico aparece assim que os números começarem a entrar nos grupos." />
+        ) : (
+          <div className="h-[180px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
+                <XAxis dataKey="dia" tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 4, fontSize: 12 }} labelStyle={{ color: "rgba(255,255,255,0.6)" }} />
+                <Line type="monotone" dataKey="entradas" stroke={C.ativo} strokeWidth={2} dot={{ r: 3, fill: C.ativo }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </Card>
       <Card>
-        <table className="w-full text-[13px]">
-          <thead>
-            <tr className="text-left zap-mono text-[10px] uppercase tracking-wide" style={{ color: C.sub }}>
-              <th className="px-4 py-3 font-normal">Instância</th>
-              <th className="px-4 py-3 font-normal">Nicho</th>
-              <th className="px-4 py-3 font-normal">Entrou</th>
-              <th className="px-4 py-3 font-normal">Faltam</th>
-              <th className="px-4 py-3 font-normal">Progresso</th>
-            </tr>
-          </thead>
-          <tbody>
-            {NUMEROS.map((n) => {
-              const pct = Math.round((n.entrou / n.limite) * 100);
-              return (
-                <tr key={n.id} style={{ borderTop: `1px solid ${C.line}` }}>
-                  <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{n.instancia}</td>
-                  <td className="px-4 py-3"><NichoTag nicho={n.nicho} /></td>
-                  <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{n.entrou}</td>
-                  <td className="px-4 py-3 zap-mono" style={{ color: C.sub }}>{n.limite - n.entrou}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2 w-40">
-                      <div className="h-1.5 flex-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
-                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: STATUS_STYLE[n.status]?.color ?? C.ativo }} />
+        {loading ? (
+          <Spinner />
+        ) : numeros.length === 0 ? (
+          <EmptyState titulo="Nenhum número cadastrado" sub="Cadastre números na aba Números para ver o progresso aqui." />
+        ) : (
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="text-left zap-mono text-[10px] uppercase tracking-wide" style={{ color: C.sub }}>
+                <th className="px-4 py-3 font-normal">Instância</th>
+                <th className="px-4 py-3 font-normal">Nicho</th>
+                <th className="px-4 py-3 font-normal">Entrou</th>
+                <th className="px-4 py-3 font-normal">Faltam</th>
+                <th className="px-4 py-3 font-normal">Progresso</th>
+              </tr>
+            </thead>
+            <tbody>
+              {numeros.map((n) => {
+                const pct = Math.round((n.entrou / n.limite_grupos) * 100);
+                return (
+                  <tr key={n.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                    <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{n.instancia}</td>
+                    <td className="px-4 py-3"><NichoTag nicho={n.nicho} /></td>
+                    <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{n.entrou}</td>
+                    <td className="px-4 py-3 zap-mono" style={{ color: C.sub }}>{n.limite_grupos - n.entrou}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 w-40">
+                        <div className="h-1.5 flex-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: STATUS_STYLE[n.status]?.color ?? C.ativo }} />
+                        </div>
+                        <span className="text-[11px] zap-mono w-8" style={{ color: C.sub }}>{pct}%</span>
                       </div>
-                      <span className="text-[11px] zap-mono w-8" style={{ color: C.sub }}>{pct}%</span>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </Card>
     </div>
   );
 }
 
-function OperacaoTab() {
+// ---------- Operação (ainda mockada — combinado deixar pra depois) ----------
+
+function OperacaoTab({ nichos }) {
   const [msg, setMsg] = useState("");
   const [rodando, setRodando] = useState(true);
-  const [nicho, setNicho] = useState("BR");
+  const [nichoNome, setNichoNome] = useState(nichos[0]?.nome ?? "");
+
   return (
     <div className="max-w-[680px]">
-      <Header title="Operação" sub="Disparo contínuo por nicho. Você pode ter mais de um anúncio rodando ao mesmo tempo, um por nicho." />
+      <Header title="Operação" sub="Disparo contínuo por nicho. Você pode ter mais de um anúncio rodando ao mesmo tempo, um por nicho. (dados de exemplo — ainda não ligado)" />
       <Card className="p-5 mb-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -436,10 +638,11 @@ function OperacaoTab() {
         </div>
         <div className="mb-4">
           <div className="text-[12px] zap-body mb-2" style={{ color: C.sub }}>Nicho deste anúncio</div>
-          <div className="flex gap-2">
-            {NICHOS_EXISTENTES.map((n) => (
-              <button key={n} onClick={() => setNicho(n)} className="px-3 py-1.5 rounded-[4px] text-[12px] zap-mono uppercase" style={{ border: `1px solid ${nicho === n ? C.ativo : C.line}`, background: nicho === n ? "rgba(53,196,138,0.1)" : "transparent", color: nicho === n ? C.ativo : C.sub }}>
-                {n}
+          <div className="flex gap-2 flex-wrap">
+            {nichos.length === 0 && <span className="text-[12px]" style={{ color: C.sub }}>crie um nicho primeiro</span>}
+            {nichos.map((n) => (
+              <button key={n.id} onClick={() => setNichoNome(n.nome)} className="px-3 py-1.5 rounded-[4px] text-[12px] zap-mono uppercase" style={{ border: `1px solid ${nichoNome === n.nome ? C.ativo : C.line}`, background: nichoNome === n.nome ? "rgba(53,196,138,0.1)" : "transparent", color: nichoNome === n.nome ? C.ativo : C.sub }}>
+                {n.nome}
               </button>
             ))}
           </div>
@@ -447,7 +650,7 @@ function OperacaoTab() {
         <textarea
           value={msg}
           onChange={(e) => setMsg(e.target.value)}
-          placeholder={`Mensagem para os grupos do nicho ${nicho}...`}
+          placeholder={`Mensagem para os grupos do nicho ${nichoNome || "..."}...`}
           className="w-full h-24 rounded-[4px] px-3 py-2 text-[13px] zap-body outline-none resize-none mb-4"
           style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
         />
@@ -457,11 +660,11 @@ function OperacaoTab() {
           style={{ background: rodando ? "rgba(255,255,255,0.06)" : C.ativo, color: rodando ? C.text : "#06110B" }}
         >
           {rodando ? <Pause size={14} /> : <Play size={14} />}
-          {rodando ? "Pausar disparo" : `Iniciar disparo contínuo · ${nicho}`}
+          {rodando ? "Pausar disparo" : `Iniciar disparo contínuo · ${nichoNome}`}
         </button>
       </Card>
 
-      <div className="text-[11px] zap-mono uppercase tracking-wide mb-2" style={{ color: C.sub }}>Anúncios ativos agora</div>
+      <div className="text-[11px] zap-mono uppercase tracking-wide mb-2" style={{ color: C.sub }}>Anúncios ativos agora (exemplo)</div>
       <div className="grid grid-cols-2 gap-3 mb-4">
         <Card className="p-3.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -478,44 +681,36 @@ function OperacaoTab() {
           <span className="text-[11px] zap-mono" style={{ color: C.sub }}>140 enviados</span>
         </Card>
       </div>
-
-      <div className="grid grid-cols-3 gap-3">
-        <Card className="p-4">
-          <div className="text-[10px] zap-mono uppercase tracking-wide mb-1.5" style={{ color: C.sub }}>Enviados no ciclo</div>
-          <div className="text-xl zap-mono" style={{ color: C.text }}>2.184</div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-[10px] zap-mono uppercase tracking-wide mb-1.5" style={{ color: C.sub }}>Total de grupos ({nicho})</div>
-          <div className="text-xl zap-mono" style={{ color: C.text }}>2.274</div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-[10px] zap-mono uppercase tracking-wide mb-1.5" style={{ color: C.sub }}>Taxa de erro</div>
-          <div className="text-xl zap-mono flex items-center gap-1.5" style={{ color: C.aquecendo }}><AlertTriangle size={14} />1.3%</div>
-        </Card>
-      </div>
     </div>
   );
 }
 
-export default function ZapAdminPreview() {
+export default function App() {
   const [tab, setTab] = useState("numeros");
+  const { nichos, numeros, cobertura, diarias, loading, erro, recarregar } = useZapData();
+
   const Content = useMemo(() => {
     switch (tab) {
-      case "importar": return ImportarTab;
-      case "progresso": return ProgressoTab;
-      case "operacao": return OperacaoTab;
-      default: return NumerosTab;
+      case "importar":
+        return <ImportarTab nichos={nichos} onDadosMudaram={recarregar} />;
+      case "progresso":
+        return <ProgressoTab numeros={numeros} cobertura={cobertura} diarias={diarias} loading={loading} />;
+      case "operacao":
+        return <OperacaoTab nichos={nichos} />;
+      default:
+        return <NumerosTab nichos={nichos} numeros={numeros} cobertura={cobertura} loading={loading} onRecarregar={recarregar} />;
     }
-  }, [tab]);
+  }, [tab, nichos, numeros, cobertura, diarias, loading, recarregar]);
 
   return (
     <div className="min-h-screen w-full zap-body" style={{ background: C.bg, color: C.text }}>
       {FONTS}
       <div className="max-w-[1100px] mx-auto px-6 py-8">
-        <CoverageStrip />
+        <CoverageStrip numeros={numeros} cobertura={cobertura} loading={loading} />
+        {erro && <ErroAviso mensagem={`Erro ao carregar dados: ${erro}`} />}
         <div className="flex gap-8">
           <Nav tab={tab} setTab={setTab} />
-          <div className="flex-1 min-w-0"><Content /></div>
+          <div className="flex-1 min-w-0">{Content}</div>
         </div>
       </div>
     </div>
