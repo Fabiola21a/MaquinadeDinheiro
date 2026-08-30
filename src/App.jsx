@@ -101,6 +101,32 @@ function StatusPill({ status }) {
   );
 }
 
+function StatusEditor({ numero, onChanged }) {
+  const [salvando, setSalvando] = useState(false);
+  const mudar = async (e) => {
+    const novoStatus = e.target.value;
+    if (novoStatus === numero.status) return;
+    setSalvando(true);
+    const { error } = await supabase.from("zap_numeros").update({ status: novoStatus }).eq("id", numero.id);
+    setSalvando(false);
+    if (!error) onChanged();
+  };
+  const cor = STATUS_STYLE[numero.status]?.color ?? C.pausado;
+  return (
+    <select
+      value={numero.status}
+      onChange={mudar}
+      disabled={salvando}
+      className="zap-mono text-[11px] uppercase tracking-wide rounded-[3px] pl-1.5 pr-1 py-1 outline-none cursor-pointer"
+      style={{ color: cor, background: "transparent", border: `1px solid ${cor}55`, opacity: salvando ? 0.5 : 1 }}
+    >
+      {Object.keys(STATUS_STYLE).map((s) => (
+        <option key={s} value={s} style={{ color: "#000" }}>{STATUS_STYLE[s].label}</option>
+      ))}
+    </select>
+  );
+}
+
 function NichoTag({ nicho }) {
   return (
     <span className="px-1.5 py-[2px] rounded-[3px] text-[10px] zap-mono uppercase tracking-wide" style={{ background: "rgba(255,255,255,0.06)", color: C.sub }}>
@@ -376,6 +402,7 @@ function ImportarTab({ nichos, onDadosMudaram }) {
 
 function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
   const [aberto, setAberto] = useState(true);
+  const [recuperandoId, setRecuperandoId] = useState(null);
   const cobertos = numeros.reduce((a, n) => a + n.entrou, 0);
   const semNumero = Math.max(totalCatalogo - cobertos, 0);
   const capacidadeDisponivel = numeros
@@ -427,26 +454,39 @@ function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
             </thead>
             <tbody>
               {numeros.map((n) => (
-                <tr key={n.id} style={{ borderTop: `1px solid ${C.line}` }}>
-                  <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{n.instancia}</td>
-                  <td className="px-4 py-3"><StatusPill status={n.status} /></td>
-                  <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>
-                    {n.entrou.toLocaleString("pt-BR")}<span style={{ color: C.sub }}> / {n.limite_grupos.toLocaleString("pt-BR")}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Dosimeter value={n.hoje} max={n.limite_entradas_dia} />
-                      <span className="zap-mono text-[11px]" style={{ color: C.sub }}>{n.hoje}/{n.limite_entradas_dia}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {n.status === "banido" && (
-                      <button className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body" style={{ border: `1px solid ${C.banido}55`, color: C.banido }}>
-                        <RotateCcw size={12} strokeWidth={2} /> Recuperar número
-                      </button>
-                    )}
-                  </td>
-                </tr>
+                <React.Fragment key={n.id}>
+                  <tr style={{ borderTop: `1px solid ${C.line}` }}>
+                    <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{n.instancia}</td>
+                    <td className="px-4 py-3"><StatusEditor numero={n} onChanged={onRecarregar} /></td>
+                    <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>
+                      {n.entrou.toLocaleString("pt-BR")}<span style={{ color: C.sub }}> / {n.limite_grupos.toLocaleString("pt-BR")}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Dosimeter value={n.hoje} max={n.limite_entradas_dia} />
+                        <span className="zap-mono text-[11px]" style={{ color: C.sub }}>{n.hoje}/{n.limite_entradas_dia}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {n.status === "banido" && (
+                        <button
+                          onClick={() => setRecuperandoId(recuperandoId === n.id ? null : n.id)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body"
+                          style={{ border: `1px solid ${C.banido}55`, color: C.banido }}
+                        >
+                          <RotateCcw size={12} strokeWidth={2} /> Recuperar número
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                  {recuperandoId === n.id && (
+                    <RecuperarNumeroForm
+                      numeroPerdido={n}
+                      onFeito={onRecarregar}
+                      onFechar={() => setRecuperandoId(null)}
+                    />
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
@@ -456,25 +496,203 @@ function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
   );
 }
 
+function RecuperarNumeroForm({ numeroPerdido, onFeito, onFechar }) {
+  const [instancia, setInstancia] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState(null);
+  const [criado, setCriado] = useState(null);
+
+  const recuperar = async () => {
+    const nome = instancia.trim();
+    if (!nome) return;
+    setSalvando(true);
+    setErro(null);
+    try {
+      const { data: novoNumero, error: e1 } = await supabase
+        .from("zap_numeros")
+        .insert({ instancia: nome, nicho_id: numeroPerdido.nicho_id, status: "aquecendo" })
+        .select()
+        .single();
+      if (e1) throw e1;
+
+      const { data: gruposDoPerdido, error: e2 } = await supabase
+        .from("zap_entradas")
+        .select("grupo_id")
+        .eq("numero_id", numeroPerdido.id)
+        .eq("status", "entrou");
+      if (e2) throw e2;
+
+      if (gruposDoPerdido.length > 0) {
+        const rows = gruposDoPerdido.map((g) => ({ grupo_id: g.grupo_id, numero_id: novoNumero.id, status: "pendente" }));
+        const { error: e3 } = await supabase.from("zap_entradas").insert(rows);
+        if (e3) throw e3;
+      }
+
+      setCriado({ instancia: nome, total: gruposDoPerdido.length });
+      onFeito(gruposDoPerdido.length);
+    } catch (e) {
+      setErro(e.code === "23505" ? "essa instância já existe" : e.message ?? String(e));
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  if (criado) {
+    return (
+      <tr>
+        <td colSpan={5} className="px-4 py-3" style={{ borderTop: `1px solid ${C.line}`, background: "rgba(225,88,80,0.04)" }}>
+          <div className="text-[12px] mb-1" style={{ color: C.text }}>
+            Conectando <span className="zap-mono">{criado.instancia}</span> · {criado.total} grupos pendentes de reentrada
+          </div>
+          <QrConector
+            instanceName={criado.instancia}
+            onConectado={async () => {
+              await supabase.from("zap_numeros").update({ status: "ativo" }).eq("instancia", criado.instancia);
+              onFeito(criado.total);
+            }}
+          />
+          <button onClick={onFechar} className="text-[12px] mt-1" style={{ color: C.sub }}>fechar</button>
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <tr>
+      <td colSpan={5} className="px-4 py-3" style={{ borderTop: `1px solid ${C.line}`, background: "rgba(225,88,80,0.04)" }}>
+        <div className="text-[12px] mb-2.5" style={{ color: C.sub }}>
+          Recuperando <span className="zap-mono" style={{ color: C.text }}>{numeroPerdido.instancia}</span> — os{" "}
+          <span style={{ color: C.text }}>{numeroPerdido.entrou}</span> grupos onde ele já tinha entrado vão ficar
+          marcados como <span className="zap-mono">pendente</span> pro número novo, não o catálogo inteiro.
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            autoFocus
+            value={instancia}
+            onChange={(e) => setInstancia(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && recuperar()}
+            placeholder="nome do número novo (ex: zap-08)"
+            className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none flex-1 max-w-[240px]"
+            style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
+          />
+          <button onClick={recuperar} disabled={salvando || !instancia.trim()} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
+            {salvando ? "recuperando..." : `Recuperar ${numeroPerdido.entrou} grupos`}
+          </button>
+          <button onClick={onFechar} className="text-[12px]" style={{ color: C.sub }}>cancelar</button>
+        </div>
+        {erro && <div className="text-[11px] mt-2" style={{ color: C.banido }}>{erro}</div>}
+      </td>
+    </tr>
+  );
+}
+
+function QrConector({ instanceName, onConectado }) {
+  const [qr, setQr] = useState(null);
+  const [status, setStatus] = useState("gerando_qr"); // gerando_qr | aguardando | conectado | erro
+  const [erro, setErro] = useState(null);
+
+  useEffect(() => {
+    let cancelado = false;
+    let poll = null;
+
+    const iniciar = async () => {
+      const { data, error } = await supabase.functions.invoke("zap-evolution", {
+        body: { action: "create", instanceName },
+      });
+      if (cancelado) return;
+      if (error || data?.error) {
+        setErro(data?.error ?? error.message);
+        setStatus("erro");
+        return;
+      }
+      setQr(data.qrcode);
+      setStatus("aguardando");
+
+      poll = setInterval(async () => {
+        const { data: s, error: e2 } = await supabase.functions.invoke("zap-evolution", {
+          body: { action: "status", instanceName },
+        });
+        if (cancelado) return;
+        if (e2 || s?.error) return; // ignora falha pontual do polling
+        if (s.state === "open") {
+          clearInterval(poll);
+          setStatus("conectado");
+          onConectado();
+        }
+      }, 4000);
+    };
+
+    iniciar();
+    return () => { cancelado = true; if (poll) clearInterval(poll); };
+  }, [instanceName]);
+
+  if (status === "erro") return <ErroAviso mensagem={`Erro ao conectar no Evolution: ${erro}`} />;
+  if (status === "conectado") {
+    return (
+      <div className="flex items-center gap-2 text-[12px]" style={{ color: C.ativo }}>
+        <CheckCircle2 size={14} /> Conectado! Número ativo.
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center gap-2 py-3">
+      {status === "gerando_qr" && <Spinner label="Gerando QR code..." />}
+      {status === "aguardando" && qr && (
+        <>
+          <img
+            src={qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`}
+            alt="QR code do WhatsApp"
+            className="rounded-[4px]"
+            style={{ width: 180, height: 180, border: `1px solid ${C.line}` }}
+          />
+          <span className="text-[11px] zap-body" style={{ color: C.sub }}>Escaneie no WhatsApp do celular · verificando a cada 4s</span>
+        </>
+      )}
+      {status === "aguardando" && !qr && (
+        <ErroAviso mensagem="Instância criada, mas o Evolution não devolveu QR code. Confira o painel do Evolution direto." />
+      )}
+    </div>
+  );
+}
+
 function NovoNumeroForm({ nichos, onCriado, onFechar }) {
   const [instancia, setInstancia] = useState("");
   const [nichoId, setNichoId] = useState(nichos[0]?.id ?? null);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
+  const [criado, setCriado] = useState(null); // { instancia } depois de gravar no banco
 
   const salvar = async () => {
     if (!instancia.trim() || !nichoId) return;
     setSalvando(true);
     setErro(null);
-    const { error } = await supabase.from("zap_numeros").insert({ instancia: instancia.trim(), nicho_id: nichoId });
+    const { error } = await supabase.from("zap_numeros").insert({ instancia: instancia.trim(), nicho_id: nichoId, status: "aquecendo" });
     setSalvando(false);
     if (error) {
       setErro(error.code === "23505" ? "essa instância já existe" : error.message);
       return;
     }
+    setCriado({ instancia: instancia.trim() });
     onCriado();
-    onFechar();
   };
+
+  if (criado) {
+    return (
+      <Card className="p-4 mb-4">
+        <div className="text-[12px] mb-1" style={{ color: C.text }}>
+          Conectando <span className="zap-mono">{criado.instancia}</span>
+        </div>
+        <QrConector
+          instanceName={criado.instancia}
+          onConectado={async () => {
+            await supabase.from("zap_numeros").update({ status: "ativo" }).eq("instancia", criado.instancia);
+            onCriado();
+          }}
+        />
+        <button onClick={onFechar} className="text-[12px] mt-2" style={{ color: C.sub }}>fechar</button>
+      </Card>
+    );
+  }
 
   return (
     <Card className="p-4 mb-4">
