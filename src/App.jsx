@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Upload, Smartphone, Activity, Radio, RotateCcw,
-  Play, Pause, AlertTriangle, ChevronRight, ChevronDown, Plus, CheckCircle2, Loader2, Contact, Trash2
+  Play, Pause, AlertTriangle, ChevronRight, ChevronDown, Plus, CheckCircle2, Loader2, Contact, Trash2, Pencil
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./lib/supabaseClient";
@@ -1066,13 +1066,90 @@ function NovoChipForm({ onCriado, onFechar }) {
   );
 }
 
-function ChipsTab({ chips, loading, onRecarregar }) {
-  const [criando, setCriando] = useState(false);
+function ChipRow({ chip, onRecarregar }) {
+  const [editando, setEditando] = useState(false);
+  const [numero, setNumero] = useState(chip.numero);
+  const [nome, setNome] = useState(chip.nome ?? "");
+  const [local, setLocal] = useState(chip.local ?? "");
+  const [criadoEm, setCriadoEm] = useState(chip.criado_em);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState(null);
 
-  const deletar = async (chip) => {
+  const salvar = async () => {
+    if (!numero.trim()) return;
+    setSalvando(true);
+    setErro(null);
+    const { error } = await supabase
+      .from("zap_chips")
+      .update({ numero: numero.trim(), nome: nome.trim() || null, local: local.trim() || null, criado_em: criadoEm })
+      .eq("id", chip.id);
+    setSalvando(false);
+    if (error) {
+      setErro(error.code === "23505" ? "esse número já está cadastrado" : error.message);
+      return;
+    }
+    setEditando(false);
+    onRecarregar();
+  };
+
+  const deletar = async () => {
     await supabase.from("zap_chips").delete().eq("id", chip.id);
     onRecarregar();
   };
+
+  if (editando) {
+    return (
+      <tr style={{ borderTop: `1px solid ${C.line}`, background: "rgba(255,255,255,0.02)" }}>
+        <td className="px-4 py-2.5"><input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="nome" className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-body outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
+        <td className="px-4 py-2.5"><input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="número" className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-mono outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
+        <td className="px-4 py-2.5"><input value={local} onChange={(e) => setLocal(e.target.value)} placeholder="local" className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-body outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
+        <td className="px-4 py-2.5"><input type="date" value={criadoEm} onChange={(e) => setCriadoEm(e.target.value)} className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-mono outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
+        <td className="px-4 py-2.5" colSpan={2}>
+          <div className="flex items-center gap-2">
+            <button onClick={salvar} disabled={salvando || !numero.trim()} className="px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
+              {salvando ? "..." : "salvar"}
+            </button>
+            <button onClick={() => setEditando(false)} className="text-[11px]" style={{ color: C.sub }}>cancelar</button>
+            {erro && <span className="text-[11px]" style={{ color: C.banido }}>{erro}</span>}
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <tr style={{ borderTop: `1px solid ${C.line}` }}>
+      <td className="px-4 py-3 zap-body" style={{ color: C.text }}>{chip.nome || <span style={{ color: C.sub }}>—</span>}</td>
+      <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{chip.numero}</td>
+      <td className="px-4 py-3 zap-body" style={{ color: C.sub }}>{chip.local || "—"}</td>
+      <td className="px-4 py-3 zap-mono" style={{ color: C.sub }}>{idadeTexto(chip.criado_em)}</td>
+      <td className="px-4 py-3">
+        {chip.zap_numeros && chip.zap_numeros.status !== "banido" ? (
+          <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
+            <Led color={C.ativo} /> em uso ({chip.zap_numeros.instancia})
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.aquecendo }}>
+            <Led color={C.aquecendo} /> disponível
+          </span>
+        )}
+      </td>
+      <td className="px-4 py-3 text-right">
+        <div className="inline-flex items-center gap-1">
+          <button onClick={() => setEditando(true)} className="p-1.5 rounded-[4px]" style={{ color: C.sub }} title="editar chip">
+            <Pencil size={13} />
+          </button>
+          <button onClick={deletar} className="p-1.5 rounded-[4px]" style={{ color: C.sub }} title="deletar chip">
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function ChipsTab({ chips, loading, onRecarregar }) {
+  const [criando, setCriando] = useState(false);
 
   const disponiveis = chips.filter((c) => !c.zap_numeros || c.zap_numeros.status === "banido");
   const emUso = chips.filter((c) => c.zap_numeros && c.zap_numeros.status !== "banido");
@@ -1107,28 +1184,7 @@ function ChipsTab({ chips, loading, onRecarregar }) {
             </thead>
             <tbody>
               {[...emUso, ...disponiveis].map((c) => (
-                <tr key={c.id} style={{ borderTop: `1px solid ${C.line}` }}>
-                  <td className="px-4 py-3 zap-body" style={{ color: C.text }}>{c.nome || <span style={{ color: C.sub }}>—</span>}</td>
-                  <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{c.numero}</td>
-                  <td className="px-4 py-3 zap-body" style={{ color: C.sub }}>{c.local || "—"}</td>
-                  <td className="px-4 py-3 zap-mono" style={{ color: C.sub }}>{idadeTexto(c.criado_em)}</td>
-                  <td className="px-4 py-3">
-                    {c.zap_numeros && c.zap_numeros.status !== "banido" ? (
-                      <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
-                        <Led color={C.ativo} /> em uso ({c.zap_numeros.instancia})
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.aquecendo }}>
-                        <Led color={C.aquecendo} /> disponível
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={() => deletar(c)} className="p-1.5 rounded-[4px]" style={{ color: C.sub }} title="deletar chip">
-                      <Trash2 size={13} />
-                    </button>
-                  </td>
-                </tr>
+                <ChipRow key={c.id} chip={c} onRecarregar={onRecarregar} />
               ))}
             </tbody>
           </table>
