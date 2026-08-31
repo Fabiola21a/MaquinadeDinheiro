@@ -171,7 +171,7 @@ function StatusEditor({ numero, onChanged }) {
       style={{ color: cor, background: "transparent", border: `1px solid ${cor}55`, opacity: salvando ? 0.5 : 1 }}
     >
       {Object.keys(STATUS_STYLE).map((s) => (
-        <option key={s} value={s} style={{ color: "#000" }}>{STATUS_STYLE[s].label}</option>
+        <option key={s} value={s} style={{ background: C.panel, color: C.text }}>{STATUS_STYLE[s].label}</option>
       ))}
     </select>
   );
@@ -841,7 +841,7 @@ function PuxarNumeroForm({ chips, nichos, onCriado, onFechar }) {
           className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none flex-1 min-w-[160px]"
           style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
         >
-          {disponiveis.map((c) => <option key={c.id} value={c.id}>{c.nome} · {c.numero}</option>)}
+          {disponiveis.map((c) => <option key={c.id} value={c.id} style={{ background: C.panel, color: C.text }}>{c.nome} · {c.numero}</option>)}
         </select>
         <select
           value={nichoId ?? ""}
@@ -849,7 +849,7 @@ function PuxarNumeroForm({ chips, nichos, onCriado, onFechar }) {
           className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none"
           style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
         >
-          {nichos.map((n) => <option key={n.id} value={n.id}>{n.nome}</option>)}
+          {nichos.map((n) => <option key={n.id} value={n.id} style={{ background: C.panel, color: C.text }}>{n.nome}</option>)}
         </select>
         <button onClick={puxar} disabled={salvando || !chipId || !nichoId} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
           {salvando ? "puxando..." : "Puxar número"}
@@ -987,7 +987,10 @@ function StatusConexaoChip({ chip, onRecarregar }) {
   const [metodo, setMetodo] = useState("qr");
   const [telefone, setTelefone] = useState("");
 
-  const instancia = chip.nome;
+  // pra chip já vinculado, usa o nome real da instância no Evolution
+  // (pode ser diferente do nome do chip, ex: "BR Market" vs "BR-Market");
+  // pra chip ainda não vinculado, o nome do chip é o que vai virar a instância.
+  const instancia = chip.zap_numeros?.instancia || chip.nome;
 
   const checar = async () => {
     if (!instancia) { setChecando(false); setEstado(null); return; }
