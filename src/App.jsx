@@ -675,7 +675,7 @@ function RecuperarNumeroForm({ numeroPerdido, onFeito, onFechar }) {
   );
 }
 
-function QrConector({ instanceName, phoneNumber, onConectado }) {
+function QrConector({ instanceName, phoneNumber, onConectado, acao = "create" }) {
   const [qr, setQr] = useState(null);
   const [pairingCode, setPairingCode] = useState(null);
   const [status, setStatus] = useState("gerando"); // gerando | aguardando | conectado | erro
@@ -687,7 +687,7 @@ function QrConector({ instanceName, phoneNumber, onConectado }) {
 
     const iniciar = async () => {
       const { data, error } = await supabase.functions.invoke("zap-evolution", {
-        body: { action: "create", instanceName, phoneNumber: phoneNumber || undefined },
+        body: { action: acao, instanceName, phoneNumber: phoneNumber || undefined },
       });
       if (cancelado) return;
       if (error || data?.error) {
@@ -986,6 +986,74 @@ function NovoChipForm({ onCriado, onFechar }) {
   );
 }
 
+function StatusConexaoChip({ chip, onRecarregar }) {
+  const [checando, setChecando] = useState(true);
+  const [estado, setEstado] = useState(null); // 'open' | outro | null (erro ao checar)
+  const [reconectando, setReconectando] = useState(false);
+  const [metodo, setMetodo] = useState("qr");
+  const [telefone, setTelefone] = useState("");
+
+  const instancia = chip.zap_numeros.instancia;
+
+  const checar = async () => {
+    setChecando(true);
+    const { data, error } = await supabase.functions.invoke("zap-evolution", {
+      body: { action: "status", instanceName: instancia },
+    });
+    setChecando(false);
+    if (error || data?.error) {
+      setEstado(null);
+      return;
+    }
+    setEstado(data.state);
+  };
+
+  useEffect(() => { checar(); }, [instancia]);
+
+  if (reconectando) {
+    return (
+      <div className="mt-2">
+        <MetodoConexao metodo={metodo} setMetodo={setMetodo} telefone={telefone} setTelefone={setTelefone} />
+        <QrConector
+          acao="reconnect"
+          instanceName={instancia}
+          phoneNumber={metodo === "codigo" ? telefone.trim() : null}
+          onConectado={async () => {
+            await supabase.from("zap_numeros").update({ status: "ativo" }).eq("instancia", instancia);
+            setReconectando(false);
+            checar();
+            onRecarregar();
+          }}
+        />
+        <button onClick={() => setReconectando(false)} className="text-[11px]" style={{ color: C.sub }}>cancelar</button>
+      </div>
+    );
+  }
+
+  if (checando) {
+    return <span className="text-[11px] zap-mono" style={{ color: C.sub }}>checando...</span>;
+  }
+
+  if (estado === "open") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
+        <Led color={C.ativo} /> instância ok
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.banido }}>
+        <Led color={C.banido} /> desconectada
+      </span>
+      <button onClick={() => setReconectando(true)} className="text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.banido}55`, color: C.banido }}>
+        reconectar
+      </button>
+    </div>
+  );
+}
+
 function ChipRow({ chip, onRecarregar }) {
   const [editando, setEditando] = useState(false);
   const [numero, setNumero] = useState(chip.numero);
@@ -1045,9 +1113,12 @@ function ChipRow({ chip, onRecarregar }) {
       <td className="px-4 py-3 zap-mono" style={{ color: C.sub }}>{idadeTexto(chip.criado_em)}</td>
       <td className="px-4 py-3">
         {chip.zap_numeros && chip.zap_numeros.status !== "banido" ? (
-          <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
-            <Led color={C.ativo} /> em uso ({chip.zap_numeros.instancia})
-          </span>
+          <div>
+            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.ativo }}>
+              <Led color={C.ativo} /> em uso ({chip.zap_numeros.instancia})
+            </span>
+            <StatusConexaoChip chip={chip} onRecarregar={onRecarregar} />
+          </div>
         ) : (
           <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.aquecendo }}>
             <Led color={C.aquecendo} /> disponível
