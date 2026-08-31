@@ -788,71 +788,61 @@ function MetodoConexao({ metodo, setMetodo, telefone, setTelefone }) {
   );
 }
 
-function NovoNumeroForm({ nichos, onCriado, onFechar }) {
-  const [instancia, setInstancia] = useState("");
+function PuxarNumeroForm({ chips, nichos, onCriado, onFechar }) {
+  const disponiveis = chips.filter((c) => !c.zap_numero_id && c.nome);
+  const [chipId, setChipId] = useState(disponiveis[0]?.id ?? null);
   const [nichoId, setNichoId] = useState(nichos[0]?.id ?? null);
-  const [conectando, setConectando] = useState(false);
+  const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
-  const [metodo, setMetodo] = useState("qr");
-  const [telefone, setTelefone] = useState("");
-  const [cancelando, setCancelando] = useState(false);
 
-  const iniciarConexao = () => {
-    if (!instancia.trim() || !nichoId) return;
-    if (metodo === "codigo" && !telefone.trim()) return;
+  const puxar = async () => {
+    const chip = disponiveis.find((c) => c.id === chipId);
+    if (!chip || !nichoId) return;
+    setSalvando(true);
     setErro(null);
-    setConectando(true);
-  };
-
-  const cancelarConexao = async () => {
-    setCancelando(true);
-    // limpa a instância no Evolution também, pra não travar o nome numa tentativa abandonada
-    await supabase.functions.invoke("zap-evolution", { body: { action: "delete", instanceName: instancia.trim() } });
-    setCancelando(false);
-    setConectando(false);
-  };
-
-  const salvarAposConectar = async () => {
-    const { error } = await supabase
+    const { data: novoNumero, error: e1 } = await supabase
       .from("zap_numeros")
-      .insert({ instancia: instancia.trim(), nicho_id: nichoId, status: "aquecendo" });
-    if (error) {
-      setErro(error.code === "23505" ? "essa instância já existe" : error.message);
+      .insert({ instancia: chip.nome, nicho_id: nichoId, status: "aquecendo" })
+      .select()
+      .single();
+    if (e1) {
+      setSalvando(false);
+      setErro(e1.code === "23505" ? "já existe uma instância com esse nome" : e1.message);
+      return;
+    }
+    const { error: e2 } = await supabase.from("zap_chips").update({ zap_numero_id: novoNumero.id }).eq("id", chip.id);
+    setSalvando(false);
+    if (e2) {
+      setErro(e2.message);
       return;
     }
     onCriado();
+    onFechar();
   };
 
-  if (conectando) {
+  if (disponiveis.length === 0) {
     return (
       <Card className="p-4 mb-4">
-        <div className="text-[12px] mb-1" style={{ color: C.text }}>
-          Conectando <span className="zap-mono">{instancia.trim()}</span> — só grava no cadastro depois de conectar
+        <div className="text-[12px]" style={{ color: C.sub }}>
+          Nenhum chip disponível pra puxar — todos já estão em uso, ou você ainda não cadastrou/conectou nenhum.
+          Vá em <span style={{ color: C.text }}>Cadastro de números</span> pra criar e conectar um novo chip primeiro.
         </div>
-        <QrConector
-          instanceName={instancia.trim()}
-          phoneNumber={metodo === "codigo" ? telefone.trim() : null}
-          onConectado={salvarAposConectar}
-        />
-        <button onClick={cancelarConexao} disabled={cancelando} className="text-[12px] mt-2" style={{ color: C.sub }}>
-          {cancelando ? "cancelando..." : "cancelar"}
-        </button>
+        <button onClick={onFechar} className="text-[12px] mt-2" style={{ color: C.sub }}>fechar</button>
       </Card>
     );
   }
 
   return (
     <Card className="p-4 mb-4">
-      <MetodoConexao metodo={metodo} setMetodo={setMetodo} telefone={telefone} setTelefone={setTelefone} />
       <div className="flex items-center gap-3 flex-wrap">
-        <input
-          autoFocus
-          value={instancia}
-          onChange={(e) => setInstancia(e.target.value)}
-          placeholder="nome da instância (ex: zap-07)"
+        <select
+          value={chipId ?? ""}
+          onChange={(e) => setChipId(Number(e.target.value))}
           className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none flex-1 min-w-[160px]"
           style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
-        />
+        >
+          {disponiveis.map((c) => <option key={c.id} value={c.id}>{c.nome} · {c.numero}</option>)}
+        </select>
         <select
           value={nichoId ?? ""}
           onChange={(e) => setNichoId(Number(e.target.value))}
@@ -861,17 +851,20 @@ function NovoNumeroForm({ nichos, onCriado, onFechar }) {
         >
           {nichos.map((n) => <option key={n.id} value={n.id}>{n.nome}</option>)}
         </select>
-        <button onClick={iniciarConexao} disabled={!instancia.trim() || !nichoId || (metodo === "codigo" && !telefone.trim())} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B" }}>
-          Conectar
+        <button onClick={puxar} disabled={salvando || !chipId || !nichoId} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
+          {salvando ? "puxando..." : "Puxar número"}
         </button>
         <button onClick={onFechar} className="text-[12px]" style={{ color: C.sub }}>cancelar</button>
+      </div>
+      <div className="text-[11px] mt-2" style={{ color: C.sub }}>
+        A conexão (QR/código) já deve estar feita no Cadastro de números — aqui só entra pro sistema de grupos.
       </div>
       {erro && <div className="text-[11px] mt-2" style={{ color: C.banido }}>{erro}</div>}
     </Card>
   );
 }
 
-function NumerosTab({ nichos, numeros, cobertura, loading, onRecarregar }) {
+function NumerosTab({ nichos, numeros, cobertura, chips, loading, onRecarregar }) {
   const [criando, setCriando] = useState(false);
 
   const porNicho = useMemo(() => {
@@ -894,11 +887,11 @@ function NumerosTab({ nichos, numeros, cobertura, loading, onRecarregar }) {
       <div className="flex items-center justify-between mb-6">
         <Header title="Progresso de entrada" sub={`${numeros.length} números cadastrados · limite de 900 grupos e 100 entradas/dia cada, por nicho`} />
         <button onClick={() => setCriando((c) => !c)} disabled={nichos.length === 0} className="px-3 py-2 text-[12px] rounded-[4px] zap-body transition-colors shrink-0" style={{ border: `1px solid ${C.line}`, color: C.sub, opacity: nichos.length === 0 ? 0.4 : 1 }}>
-          + Cadastrar número
+          + Puxar número do cadastro
         </button>
       </div>
 
-      {criando && <NovoNumeroForm nichos={nichos} onCriado={onRecarregar} onFechar={() => setCriando(false)} />}
+      {criando && <PuxarNumeroForm chips={chips} nichos={nichos} onCriado={onRecarregar} onFechar={() => setCriando(false)} />}
 
       {loading ? (
         <Spinner />
@@ -988,38 +981,48 @@ function NovoChipForm({ onCriado, onFechar }) {
 
 function StatusConexaoChip({ chip, onRecarregar }) {
   const [checando, setChecando] = useState(true);
-  const [estado, setEstado] = useState(null); // 'open' | outro | null (erro ao checar)
+  const [estado, setEstado] = useState(null); // 'open' | outro estado | null
+  const [existeNoEvolution, setExisteNoEvolution] = useState(true);
   const [reconectando, setReconectando] = useState(false);
   const [metodo, setMetodo] = useState("qr");
   const [telefone, setTelefone] = useState("");
 
-  const instancia = chip.zap_numeros.instancia;
+  const instancia = chip.nome;
 
   const checar = async () => {
+    if (!instancia) { setChecando(false); setEstado(null); return; }
     setChecando(true);
     const { data, error } = await supabase.functions.invoke("zap-evolution", {
       body: { action: "status", instanceName: instancia },
     });
     setChecando(false);
     if (error || data?.error) {
+      setExisteNoEvolution(false);
       setEstado(null);
       return;
     }
+    setExisteNoEvolution(true);
     setEstado(data.state);
   };
 
   useEffect(() => { checar(); }, [instancia]);
+
+  if (!instancia) {
+    return <span className="text-[11px] zap-mono" style={{ color: C.sub }}>defina um nome pra poder conectar</span>;
+  }
 
   if (reconectando) {
     return (
       <div className="mt-2">
         <MetodoConexao metodo={metodo} setMetodo={setMetodo} telefone={telefone} setTelefone={setTelefone} />
         <QrConector
-          acao="reconnect"
+          acao={existeNoEvolution ? "reconnect" : "create"}
           instanceName={instancia}
           phoneNumber={metodo === "codigo" ? telefone.trim() : null}
           onConectado={async () => {
-            await supabase.from("zap_numeros").update({ status: "ativo" }).eq("instancia", instancia);
+            if (chip.zap_numero_id) {
+              await supabase.from("zap_numeros").update({ status: "ativo" }).eq("id", chip.zap_numero_id);
+            }
             setReconectando(false);
             checar();
             onRecarregar();
@@ -1037,7 +1040,7 @@ function StatusConexaoChip({ chip, onRecarregar }) {
   if (estado === "open") {
     return (
       <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
-        <Led color={C.ativo} /> instância ok
+        <Led color={C.ativo} /> conectado
       </span>
     );
   }
@@ -1045,10 +1048,10 @@ function StatusConexaoChip({ chip, onRecarregar }) {
   return (
     <div className="flex items-center gap-2">
       <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.banido }}>
-        <Led color={C.banido} /> desconectada
+        <Led color={C.banido} /> {existeNoEvolution ? "desconectado" : "não conectado"}
       </span>
       <button onClick={() => setReconectando(true)} className="text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.banido}55`, color: C.banido }}>
-        reconectar
+        {existeNoEvolution ? "reconectar" : "conectar"}
       </button>
     </div>
   );
@@ -1112,18 +1115,18 @@ function ChipRow({ chip, onRecarregar }) {
       <td className="px-4 py-3 zap-body" style={{ color: C.sub }}>{chip.local || "—"}</td>
       <td className="px-4 py-3 zap-mono" style={{ color: C.sub }}>{idadeTexto(chip.criado_em)}</td>
       <td className="px-4 py-3">
-        {chip.zap_numeros && chip.zap_numeros.status !== "banido" ? (
-          <div>
+        <div>
+          {chip.zap_numeros && chip.zap_numeros.status !== "banido" ? (
             <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.ativo }}>
               <Led color={C.ativo} /> em uso ({chip.zap_numeros.instancia})
             </span>
-            <StatusConexaoChip chip={chip} onRecarregar={onRecarregar} />
-          </div>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.aquecendo }}>
-            <Led color={C.aquecendo} /> disponível
-          </span>
-        )}
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.aquecendo }}>
+              <Led color={C.aquecendo} /> disponível
+            </span>
+          )}
+          <StatusConexaoChip chip={chip} onRecarregar={onRecarregar} />
+        </div>
       </td>
       <td className="px-4 py-3 text-right">
         <div className="inline-flex items-center gap-1">
@@ -1265,7 +1268,7 @@ export default function App() {
       case "operacao":
         return <OperacaoTab nichos={nichos} />;
       default:
-        return <NumerosTab nichos={nichos} numeros={numeros} cobertura={cobertura} loading={loading} onRecarregar={recarregar} />;
+        return <NumerosTab nichos={nichos} numeros={numeros} cobertura={cobertura} chips={chips} loading={loading} onRecarregar={recarregar} />;
     }
   }, [tab, nichos, numeros, cobertura, diarias, chips, loading, recarregar]);
 
