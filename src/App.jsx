@@ -677,6 +677,7 @@ function RecuperarNumeroForm({ numeroPerdido, onFeito, onFechar }) {
 
 function QrConector({ instanceName, phoneNumber, onConectado, acao = "create" }) {
   const [qr, setQr] = useState(null);
+  const [qrRaw, setQrRaw] = useState(null);
   const [pairingCode, setPairingCode] = useState(null);
   const [status, setStatus] = useState("gerando"); // gerando | aguardando | conectado | erro
   const [erro, setErro] = useState(null);
@@ -696,6 +697,7 @@ function QrConector({ instanceName, phoneNumber, onConectado, acao = "create" })
         return;
       }
       setQr(data.qrcode);
+      setQrRaw(data.qrRaw);
       setPairingCode(data.pairingCode);
       setStatus("aguardando");
 
@@ -725,6 +727,12 @@ function QrConector({ instanceName, phoneNumber, onConectado, acao = "create" })
       </div>
     );
   }
+  const qrImgSrc = qr
+    ? (qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`)
+    : qrRaw
+      ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrRaw)}`
+      : null;
+
   return (
     <div className="flex flex-col items-center gap-2 py-3">
       {status === "gerando" && <Spinner label={phoneNumber ? "Gerando código..." : "Gerando QR code..."} />}
@@ -738,18 +746,18 @@ function QrConector({ instanceName, phoneNumber, onConectado, acao = "create" })
           </span>
         </>
       )}
-      {status === "aguardando" && !pairingCode && qr && (
+      {status === "aguardando" && !pairingCode && qrImgSrc && (
         <>
           <img
-            src={qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`}
+            src={qrImgSrc}
             alt="QR code do WhatsApp"
             className="rounded-[4px]"
-            style={{ width: 180, height: 180, border: `1px solid ${C.line}` }}
+            style={{ width: 200, height: 200, border: `1px solid ${C.line}`, background: "#fff" }}
           />
           <span className="text-[11px] zap-body" style={{ color: C.sub }}>Escaneie no WhatsApp do celular · verificando a cada 4s</span>
         </>
       )}
-      {status === "aguardando" && !pairingCode && !qr && (
+      {status === "aguardando" && !pairingCode && !qrImgSrc && (
         <ErroAviso mensagem="Instância criada, mas o Evolution não devolveu QR/código. Confira o painel do Evolution direto." />
       )}
     </div>
@@ -789,7 +797,9 @@ function MetodoConexao({ metodo, setMetodo, telefone, setTelefone }) {
 }
 
 function PuxarNumeroForm({ chips, nichos, onCriado, onFechar }) {
-  const disponiveis = chips.filter((c) => !c.zap_numero_id && c.nome);
+  const disponiveis = chips.filter(
+    (c) => !c.zap_numero_id && c.nome && (!c.aquecimento_iniciado_em || c.aquecimento_concluido)
+  );
   const [chipId, setChipId] = useState(disponiveis[0]?.id ?? null);
   const [nichoId, setNichoId] = useState(nichos[0]?.id ?? null);
   const [salvando, setSalvando] = useState(false);
@@ -913,6 +923,11 @@ function NumerosTab({ nichos, numeros, cobertura, chips, loading, onRecarregar }
 
 // ---------- Cadastro de números (inventário de chips) ----------
 
+function semanaAquecimento(iniciadoEm) {
+  const dias = (Date.now() - new Date(iniciadoEm).getTime()) / (24 * 60 * 60 * 1000);
+  return Math.min(Math.floor(dias / 7) + 1, 4);
+}
+
 function idadeTexto(criadoEm) {
   const criado = new Date(criadoEm + "T00:00:00");
   const hoje = new Date();
@@ -979,7 +994,7 @@ function NovoChipForm({ onCriado, onFechar }) {
   );
 }
 
-function StatusConexaoChip({ chip, onRecarregar }) {
+function StatusConexaoChip({ chip, onRecarregar, onEstadoChange }) {
   const [checando, setChecando] = useState(true);
   const [estado, setEstado] = useState(null); // 'open' | outro estado | null
   const [existeNoEvolution, setExisteNoEvolution] = useState(true);
@@ -993,7 +1008,7 @@ function StatusConexaoChip({ chip, onRecarregar }) {
   const instancia = chip.zap_numeros?.instancia || chip.nome;
 
   const checar = async () => {
-    if (!instancia) { setChecando(false); setEstado(null); return; }
+    if (!instancia) { setChecando(false); setEstado(null); onEstadoChange?.(null); return; }
     setChecando(true);
     const { data, error } = await supabase.functions.invoke("zap-evolution", {
       body: { action: "status", instanceName: instancia },
@@ -1002,10 +1017,12 @@ function StatusConexaoChip({ chip, onRecarregar }) {
     if (error || data?.error) {
       setExisteNoEvolution(false);
       setEstado(null);
+      onEstadoChange?.(null);
       return;
     }
     setExisteNoEvolution(true);
     setEstado(data.state);
+    onEstadoChange?.(data.state);
   };
 
   useEffect(() => { checar(); }, [instancia]);
@@ -1068,6 +1085,15 @@ function ChipRow({ chip, onRecarregar }) {
   const [criadoEm, setCriadoEm] = useState(chip.criado_em);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
+  const [estadoConexao, setEstadoConexao] = useState(null);
+  const [iniciando, setIniciando] = useState(false);
+
+  const iniciarAquecimento = async () => {
+    setIniciando(true);
+    await supabase.from("zap_chips").update({ aquecimento_iniciado_em: new Date().toISOString() }).eq("id", chip.id);
+    setIniciando(false);
+    onRecarregar();
+  };
 
   const salvar = async () => {
     if (!numero.trim()) return;
@@ -1123,12 +1149,33 @@ function ChipRow({ chip, onRecarregar }) {
             <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.ativo }}>
               <Led color={C.ativo} /> em uso ({chip.zap_numeros.instancia})
             </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.aquecendo }}>
-              <Led color={C.aquecendo} /> disponível
+          ) : chip.aquecimento_concluido ? (
+            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.ativo }}>
+              <Led color={C.ativo} /> pronto — disponível pra puxar
             </span>
+          ) : chip.aquecimento_iniciado_em ? (
+            <div className="mb-1">
+              <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.aquecendo }}>
+                <Led color={C.aquecendo} /> aquecendo — semana {semanaAquecimento(chip.aquecimento_iniciado_em)}/4
+              </span>
+              <div className="text-[10px] zap-body mt-0.5" style={{ color: C.sub }}>
+                começou {new Date(chip.aquecimento_iniciado_em).toLocaleDateString("pt-BR")}
+                {chip.proxima_acao_aquecimento && ` · próxima ação ${new Date(chip.proxima_acao_aquecimento).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}
+              </div>
+            </div>
+          ) : (
+            <div className="mb-1">
+              <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.sub }}>
+                <Led color={C.pausado} /> aquecimento não iniciado
+              </span>
+              {estadoConexao === "open" && (
+                <button onClick={iniciarAquecimento} disabled={iniciando} className="block mt-1 text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.ativo}55`, color: C.ativo }}>
+                  {iniciando ? "iniciando..." : "▶ iniciar aquecimento"}
+                </button>
+              )}
+            </div>
           )}
-          <StatusConexaoChip chip={chip} onRecarregar={onRecarregar} />
+          <StatusConexaoChip chip={chip} onRecarregar={onRecarregar} onEstadoChange={setEstadoConexao} />
         </div>
       </td>
       <td className="px-4 py-3 text-right">
