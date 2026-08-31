@@ -1254,6 +1254,57 @@ function ChipsTab({ chips, loading, onRecarregar }) {
 
 // ---------- Operação (ainda mockada — combinado deixar pra depois) ----------
 
+function UploadImagem({ imagemUrl, setImagemUrl }) {
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState(null);
+
+  const paraBase64 = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(",")[1]); // remove o prefixo data:...;base64,
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  const enviar = async (file) => {
+    if (!file) return;
+    setEnviando(true);
+    setErro(null);
+    try {
+      const contentBase64 = await paraBase64(file);
+      const { data, error } = await supabase.functions.invoke("zap-github-upload", {
+        body: { filename: file.name, contentBase64 },
+      });
+      if (error || data?.error) throw new Error(data?.error ?? error.message);
+      setImagemUrl(data.url);
+    } catch (e) {
+      setErro(e.message ?? String(e));
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  if (imagemUrl) {
+    return (
+      <div className="flex items-center gap-3 mb-4">
+        <img src={imagemUrl} alt="preview" className="rounded-[4px]" style={{ width: 64, height: 64, objectFit: "cover", border: `1px solid ${C.line}` }} />
+        <button onClick={() => setImagemUrl("")} className="text-[12px]" style={{ color: C.sub }}>remover imagem</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4">
+      <label className="flex flex-col items-center justify-center gap-1.5 py-5 rounded-[4px] cursor-pointer" style={{ border: `1px dashed ${C.line}` }}>
+        <Upload size={16} style={{ color: C.sub }} />
+        <span className="text-[12px] zap-body" style={{ color: C.sub }}>{enviando ? "enviando..." : "clique pra escolher uma imagem"}</span>
+        <input type="file" accept="image/*" className="hidden" disabled={enviando} onChange={(e) => enviar(e.target.files?.[0])} />
+      </label>
+      {erro && <div className="text-[11px] mt-1.5" style={{ color: C.banido }}>{erro}</div>}
+    </div>
+  );
+}
+
 function OperacaoTab({ nichos }) {
   const [execucoes, setExecucoes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1384,16 +1435,10 @@ function OperacaoTab({ nichos }) {
             <Plus size={12} /> adicionar versão
           </button>
 
-          <div className="text-[12px] zap-body mb-2" style={{ color: C.sub }}>Imagem (opcional — link direto pra imagem)</div>
-          <input
-            value={imagemUrl}
-            onChange={(e) => setImagemUrl(e.target.value)}
-            placeholder="https://..."
-            className="w-full px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none mb-4"
-            style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
-          />
+          <div className="text-[12px] zap-body mb-2" style={{ color: C.sub }}>Imagem (opcional)</div>
+          <UploadImagem imagemUrl={imagemUrl} setImagemUrl={setImagemUrl} />
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mt-4">
             <button onClick={iniciar} disabled={salvando || !nichoId || variantes.every((v) => !v.trim())} className="px-4 py-2 text-[13px] rounded-[4px] font-medium zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
               {salvando ? "iniciando..." : "Iniciar disparo contínuo"}
             </button>
