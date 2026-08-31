@@ -1255,66 +1255,194 @@ function ChipsTab({ chips, loading, onRecarregar }) {
 // ---------- Operação (ainda mockada — combinado deixar pra depois) ----------
 
 function OperacaoTab({ nichos }) {
-  const [msg, setMsg] = useState("");
-  const [rodando, setRodando] = useState(true);
-  const [nichoNome, setNichoNome] = useState(nichos[0]?.nome ?? "");
+  const [execucoes, setExecucoes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [criando, setCriando] = useState(false);
+  const [nichoId, setNichoId] = useState(nichos[0]?.id ?? null);
+  const [variantes, setVariantes] = useState([""]);
+  const [imagemUrl, setImagemUrl] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState(null);
+  const [distribuicoes, setDistribuicoes] = useState({});
+
+  const carregar = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from("zap_disparo_execucoes")
+      .select("*, zap_nichos(nome)")
+      .neq("status", "concluido")
+      .order("iniciado_em", { ascending: false });
+    setExecucoes(data ?? []);
+    setLoading(false);
+
+    // busca a distribuição de envios por variante, pra cada execução
+    const dist = {};
+    for (const exec of data ?? []) {
+      const { data: linhas } = await supabase
+        .from("zap_disparo_log")
+        .select("variante_id, zap_disparo_variantes(texto)")
+        .eq("execucao_id", exec.id)
+        .eq("status", "enviado")
+        .not("variante_id", "is", null);
+      const contagem = {};
+      (linhas ?? []).forEach((l) => {
+        const chave = l.zap_disparo_variantes?.texto?.slice(0, 24) ?? `#${l.variante_id}`;
+        contagem[chave] = (contagem[chave] ?? 0) + 1;
+      });
+      dist[exec.id] = contagem;
+    }
+    setDistribuicoes(dist);
+  };
+
+  useEffect(() => { carregar(); }, []);
+
+  const atualizarVariante = (i, valor) => {
+    setVariantes((v) => v.map((x, idx) => (idx === i ? valor : x)));
+  };
+  const adicionarVariante = () => setVariantes((v) => [...v, ""]);
+  const removerVariante = (i) => setVariantes((v) => v.filter((_, idx) => idx !== i));
+
+  const iniciar = async () => {
+    const textos = variantes.map((v) => v.trim()).filter(Boolean);
+    if (!nichoId || textos.length === 0) return;
+    setSalvando(true);
+    setErro(null);
+    const { data: exec, error } = await supabase.from("zap_disparo_execucoes").insert({
+      nicho_id: nichoId,
+      mensagem: textos[0],
+      imagem_url: imagemUrl.trim() || null,
+      status: "em_andamento",
+      pausado: false,
+    }).select().single();
+    if (error) {
+      setSalvando(false);
+      setErro(error.message);
+      return;
+    }
+    const { error: e2 } = await supabase.from("zap_disparo_variantes").insert(
+      textos.map((texto) => ({ execucao_id: exec.id, texto }))
+    );
+    setSalvando(false);
+    if (e2) { setErro(e2.message); return; }
+    setVariantes([""]);
+    setImagemUrl("");
+    setCriando(false);
+    carregar();
+  };
+
+  const alternarPausa = async (exec) => {
+    await supabase.from("zap_disparo_execucoes").update({ pausado: !exec.pausado }).eq("id", exec.id);
+    carregar();
+  };
+
+  const encerrar = async (exec) => {
+    await supabase.from("zap_disparo_execucoes").update({ status: "concluido" }).eq("id", exec.id);
+    carregar();
+  };
 
   return (
     <div className="max-w-[680px]">
-      <Header title="Operação" sub="Disparo contínuo por nicho. Você pode ter mais de um anúncio rodando ao mesmo tempo, um por nicho. (dados de exemplo — ainda não ligado)" />
-      <Card className="p-5 mb-4">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Led color={rodando ? C.ativo : C.pausado} live={rodando} />
-            <span className="text-[13px] zap-body" style={{ color: C.text }}>{rodando ? "Transmitindo" : "Pausado"}</span>
-          </div>
-          <span className="text-[11px] zap-mono" style={{ color: C.sub }}>ciclo 03</span>
-        </div>
-        <div className="mb-4">
+      <div className="flex items-center justify-between mb-6">
+        <Header title="Operação" sub="Disparo contínuo por nicho — pode ter mais de um anúncio rodando ao mesmo tempo, mesmo no mesmo nicho." />
+        <button onClick={() => setCriando((c) => !c)} disabled={nichos.length === 0} className="px-3 py-2 text-[12px] rounded-[4px] zap-body transition-colors shrink-0" style={{ border: `1px solid ${C.line}`, color: C.sub, opacity: nichos.length === 0 ? 0.4 : 1 }}>
+          + Novo anúncio
+        </button>
+      </div>
+
+      {criando && (
+        <Card className="p-5 mb-4">
           <div className="text-[12px] zap-body mb-2" style={{ color: C.sub }}>Nicho deste anúncio</div>
-          <div className="flex gap-2 flex-wrap">
-            {nichos.length === 0 && <span className="text-[12px]" style={{ color: C.sub }}>crie um nicho primeiro</span>}
+          <div className="flex gap-2 flex-wrap mb-4">
             {nichos.map((n) => (
-              <button key={n.id} onClick={() => setNichoNome(n.nome)} className="px-3 py-1.5 rounded-[4px] text-[12px] zap-mono uppercase" style={{ border: `1px solid ${nichoNome === n.nome ? C.ativo : C.line}`, background: nichoNome === n.nome ? "rgba(53,196,138,0.1)" : "transparent", color: nichoNome === n.nome ? C.ativo : C.sub }}>
+              <button key={n.id} onClick={() => setNichoId(n.id)} className="px-3 py-1.5 rounded-[4px] text-[12px] zap-mono uppercase" style={{ border: `1px solid ${nichoId === n.id ? C.ativo : C.line}`, background: nichoId === n.id ? "rgba(53,196,138,0.1)" : "transparent", color: nichoId === n.id ? C.ativo : C.sub }}>
                 {n.nome}
               </button>
             ))}
           </div>
-        </div>
-        <textarea
-          value={msg}
-          onChange={(e) => setMsg(e.target.value)}
-          placeholder={`Mensagem para os grupos do nicho ${nichoNome || "..."}...`}
-          className="w-full h-24 rounded-[4px] px-3 py-2 text-[13px] zap-body outline-none resize-none mb-4"
-          style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
-        />
-        <button
-          onClick={() => setRodando((r) => !r)}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-[4px] text-[13px] font-medium zap-body transition-opacity hover:opacity-90"
-          style={{ background: rodando ? "rgba(255,255,255,0.06)" : C.ativo, color: rodando ? C.text : "#06110B" }}
-        >
-          {rodando ? <Pause size={14} /> : <Play size={14} />}
-          {rodando ? "Pausar disparo" : `Iniciar disparo contínuo · ${nichoNome}`}
-        </button>
-      </Card>
 
-      <div className="text-[11px] zap-mono uppercase tracking-wide mb-2" style={{ color: C.sub }}>Anúncios ativos agora (exemplo)</div>
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <Card className="p-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Led color={C.ativo} live />
-            <span className="text-[12px] zap-mono">BR · ciclo 03</span>
+          <div className="text-[12px] zap-body mb-2" style={{ color: C.sub }}>Versões da mensagem (sorteia uma a cada envio)</div>
+          <div className="flex flex-col gap-2 mb-2">
+            {variantes.map((v, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="text-[11px] zap-mono mt-2.5" style={{ color: C.sub }}>{i + 1}.</span>
+                <textarea
+                  value={v}
+                  onChange={(e) => atualizarVariante(i, e.target.value)}
+                  placeholder="Texto dessa versão..."
+                  className="flex-1 h-16 rounded-[4px] px-3 py-2 text-[13px] zap-body outline-none resize-none"
+                  style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
+                />
+                {variantes.length > 1 && (
+                  <button onClick={() => removerVariante(i)} className="p-2 mt-1" style={{ color: C.sub }}>
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
-          <span className="text-[11px] zap-mono" style={{ color: C.sub }}>2.184 enviados</span>
-        </Card>
-        <Card className="p-3.5 flex items-center justify-between">
+          <button onClick={adicionarVariante} className="flex items-center gap-1 text-[12px] mb-4" style={{ color: C.ativo }}>
+            <Plus size={12} /> adicionar versão
+          </button>
+
+          <div className="text-[12px] zap-body mb-2" style={{ color: C.sub }}>Imagem (opcional — link direto pra imagem)</div>
+          <input
+            value={imagemUrl}
+            onChange={(e) => setImagemUrl(e.target.value)}
+            placeholder="https://..."
+            className="w-full px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none mb-4"
+            style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
+          />
+
           <div className="flex items-center gap-2">
-            <Led color={C.pausado} />
-            <span className="text-[12px] zap-mono">US · pausado</span>
+            <button onClick={iniciar} disabled={salvando || !nichoId || variantes.every((v) => !v.trim())} className="px-4 py-2 text-[13px] rounded-[4px] font-medium zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
+              {salvando ? "iniciando..." : "Iniciar disparo contínuo"}
+            </button>
+            <button onClick={() => setCriando(false)} className="text-[12px]" style={{ color: C.sub }}>cancelar</button>
           </div>
-          <span className="text-[11px] zap-mono" style={{ color: C.sub }}>140 enviados</span>
+          {erro && <div className="text-[11px] mt-2" style={{ color: C.banido }}>{erro}</div>}
         </Card>
-      </div>
+      )}
+
+      {loading ? (
+        <Spinner />
+      ) : execucoes.length === 0 ? (
+        <EmptyState titulo="Nenhum anúncio rodando" sub="Clique em “+ Novo anúncio” pra começar um disparo contínuo." />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {execucoes.map((exec) => (
+            <Card key={exec.id} className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Led color={exec.pausado ? C.pausado : C.ativo} live={!exec.pausado} />
+                  <span className="text-[13px] zap-mono uppercase" style={{ color: C.text }}>{exec.zap_nichos?.nome}</span>
+                  <span className="text-[11px] zap-mono" style={{ color: C.sub }}>ciclo {exec.ciclo_atual}</span>
+                  {exec.imagem_url && <span className="text-[10px] zap-mono px-1.5 py-[2px] rounded-[3px]" style={{ background: "rgba(255,255,255,0.06)", color: C.sub }}>📷 com imagem</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => alternarPausa(exec)} className="px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body" style={{ border: `1px solid ${C.line}`, color: C.sub }}>
+                    {exec.pausado ? "retomar" : "pausar"}
+                  </button>
+                  <button onClick={() => encerrar(exec)} className="px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body" style={{ border: `1px solid ${C.banido}55`, color: C.banido }}>
+                    encerrar
+                  </button>
+                </div>
+              </div>
+              <div className="text-[12px] zap-body mb-2" style={{ color: C.sub }}>{exec.mensagem}</div>
+              <div className="flex items-center gap-4 text-[11px] zap-mono mb-2" style={{ color: C.sub }}>
+                <span>enviados <span style={{ color: C.text }}>{exec.total_enviados ?? 0}</span></span>
+                <span>erros <span style={{ color: C.text }}>{exec.total_erros ?? 0}</span></span>
+              </div>
+              {distribuicoes[exec.id] && Object.keys(distribuicoes[exec.id]).length > 1 && (
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] zap-mono pt-2" style={{ borderTop: `1px solid ${C.line}`, color: C.sub }}>
+                  {Object.entries(distribuicoes[exec.id]).map(([texto, count]) => (
+                    <span key={texto}>"{texto}..." <span style={{ color: C.text }}>{count}</span></span>
+                  ))}
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
