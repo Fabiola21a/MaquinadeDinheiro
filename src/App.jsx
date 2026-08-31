@@ -252,7 +252,6 @@ function Nav({ tab, setTab }) {
     { id: "importar", label: "Importar grupos", icon: Upload, n: "02" },
     { id: "numeros", label: "Progresso de entrada", icon: Activity, n: "03" },
     { id: "operacao", label: "Operação", icon: Radio, n: "04" },
-    { id: "atividade", label: "Atividade recente", icon: Zap, n: "05" },
   ];
   return (
     <div className="w-[236px] shrink-0 pr-5" style={{ borderRight: `1px solid ${C.line}` }}>
@@ -1479,12 +1478,13 @@ function OperacaoTab({ nichos }) {
                 <span>erros <span style={{ color: C.text }}>{exec.total_erros ?? 0}</span></span>
               </div>
               {distribuicoes[exec.id] && Object.keys(distribuicoes[exec.id]).length > 1 && (
-                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] zap-mono pt-2" style={{ borderTop: `1px solid ${C.line}`, color: C.sub }}>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] zap-mono pt-2 mb-2" style={{ borderTop: `1px solid ${C.line}`, color: C.sub }}>
                   {Object.entries(distribuicoes[exec.id]).map(([texto, count]) => (
                     <span key={texto}>"{texto}..." <span style={{ color: C.text }}>{count}</span></span>
                   ))}
                 </div>
               )}
+              <DetalhesPorNumero execucaoId={exec.id} nichoId={exec.nicho_id} />
             </Card>
           ))}
         </div>
@@ -1493,7 +1493,127 @@ function OperacaoTab({ nichos }) {
   );
 }
 
-// ---------- Atividade recente ----------
+function situacaoNumeroDisparo(estado) {
+  if (!estado) return { label: "ainda não iniciou", cor: C.sub };
+  if (estado.ciclo_completo) return { label: "terminou o ciclo — aguardando reinício", cor: C.aquecendo };
+  if (!estado.proxima_acao) return { label: "pronto pra próxima mensagem", cor: C.ativo };
+  const faltaMs = new Date(estado.proxima_acao).getTime() - Date.now();
+  if (faltaMs <= 0) return { label: "pronto pra próxima mensagem", cor: C.ativo };
+  const faltaMin = Math.ceil(faltaMs / 60000);
+  if (estado.mensagens_no_lote === 0) return { label: `em pausa entre lotes — volta em ${faltaMin}min`, cor: C.pausado };
+  return { label: `próxima msg em ${faltaMin}min`, cor: C.aquecendo };
+}
+
+function HistoricoNumero({ execucaoId, numeroId, onFechar }) {
+  const [linhas, setLinhas] = useState(null);
+
+  useEffect(() => {
+    supabase
+      .from("zap_disparo_log")
+      .select("id, grupo_id, status, enviado_em, created_at")
+      .eq("execucao_id", execucaoId)
+      .eq("numero_id", numeroId)
+      .order("created_at", { ascending: false })
+      .limit(10)
+      .then(({ data }) => setLinhas(data ?? []));
+  }, [execucaoId, numeroId]);
+
+  return (
+    <div className="px-3 py-2 rounded-[4px] mt-1.5" style={{ background: "rgba(0,0,0,0.25)" }}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] zap-mono uppercase" style={{ color: C.sub }}>últimos envios</span>
+        <button onClick={onFechar} className="text-[10px]" style={{ color: C.sub }}>fechar</button>
+      </div>
+      {linhas === null ? (
+        <span className="text-[11px] zap-body" style={{ color: C.sub }}>carregando...</span>
+      ) : linhas.length === 0 ? (
+        <span className="text-[11px] zap-body" style={{ color: C.sub }}>nenhum envio ainda</span>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {linhas.map((l) => (
+            <div key={l.id} className="flex items-center justify-between text-[11px] zap-mono">
+              <span style={{ color: l.status === "enviado" ? C.ativo : C.banido }}>grupo #{l.grupo_id} · {l.status}</span>
+              <span style={{ color: C.sub }}>{tempoRelativo(l.created_at)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetalhesPorNumero({ execucaoId, nichoId }) {
+  const [linhas, setLinhas] = useState(null);
+  const [historicoAberto, setHistoricoAberto] = useState(null);
+
+  const carregar = async () => {
+    const { data: numeros } = await supabase
+      .from("zap_numeros")
+      .select("id, instancia, status")
+      .eq("nicho_id", nichoId)
+      .eq("status", "ativo");
+
+    const { data: estados } = await supabase
+      .from("zap_disparo_estado")
+      .select("*")
+      .eq("execucao_id", execucaoId);
+
+    const porNumero = {};
+    (estados ?? []).forEach((e) => { porNumero[e.numero_id] = e; });
+
+    const combinado = await Promise.all(
+      (numeros ?? []).map(async (n) => {
+        const { count } = await supabase
+          .from("zap_disparo_log")
+          .select("id", { count: "exact", head: true })
+          .eq("execucao_id", execucaoId)
+          .eq("numero_id", n.id)
+          .eq("status", "enviado");
+        return { numero: n, estado: porNumero[n.id], enviados: count ?? 0 };
+      })
+    );
+    setLinhas(combinado);
+  };
+
+  useEffect(() => {
+    carregar();
+    const intervalo = setInterval(carregar, 20000);
+    return () => clearInterval(intervalo);
+  }, [execucaoId, nichoId]);
+
+  if (linhas === null) return <div className="text-[11px] zap-mono pt-2" style={{ color: C.sub, borderTop: `1px solid ${C.line}` }}>carregando por número...</div>;
+  if (linhas.length === 0) return <div className="text-[11px] zap-body pt-2" style={{ color: C.sub, borderTop: `1px solid ${C.line}` }}>nenhum número ativo nesse nicho</div>;
+
+  return (
+    <div className="pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
+      {linhas.map(({ numero, estado, enviados }) => {
+        const sit = situacaoNumeroDisparo(estado);
+        return (
+          <div key={numero.id}>
+            <div className="flex items-center justify-between py-1">
+              <div className="flex items-center gap-2">
+                <Led color={sit.cor} live={sit.cor === C.ativo} />
+                <span className="text-[12px] zap-mono" style={{ color: C.text }}>{numero.instancia}</span>
+                <span className="text-[11px] zap-body" style={{ color: C.sub }}>{sit.label}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] zap-mono" style={{ color: C.sub }}>{enviados} enviados</span>
+                <button onClick={() => setHistoricoAberto(historicoAberto === numero.id ? null : numero.id)} className="text-[11px]" style={{ color: C.ativo }}>
+                  histórico
+                </button>
+              </div>
+            </div>
+            {historicoAberto === numero.id && (
+              <HistoricoNumero execucaoId={execucaoId} numeroId={numero.id} onFechar={() => setHistoricoAberto(null)} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------- helpers ----------
 
 function tempoRelativo(iso) {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -1503,71 +1623,6 @@ function tempoRelativo(iso) {
   const h = Math.floor(min / 60);
   if (h < 24) return `há ${h}h`;
   return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
-const TIPO_AQUECIMENTO_LABEL = {
-  status: "postou status",
-  mensagem_semente: "mandou msg em grupo-semente",
-  mensagem_veterano: "trocou msg com número veterano",
-};
-
-function AtividadeTab() {
-  const [eventos, setEventos] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const carregar = async () => {
-    setLoading(true);
-    const [entradas, disparos, aquecimentos] = await Promise.all([
-      supabase.from("zap_entradas").select("id, created_at, status, zap_numeros(instancia), zap_grupos(id)").eq("status", "entrou").order("data_entrada", { ascending: false }).limit(40),
-      supabase.from("zap_disparo_log").select("id, created_at, status, zap_numeros(instancia), zap_disparo_execucoes(zap_nichos(nome))").eq("status", "enviado").order("enviado_em", { ascending: false }).limit(40),
-      supabase.from("zap_aquecimento_log").select("id, created_at, semana, tipo, zap_chips(nome)").order("created_at", { ascending: false }).limit(40),
-    ]);
-
-    const lista = [
-      ...(entradas.data ?? []).map((e) => ({
-        id: `e${e.id}`, quando: e.created_at, cor: C.ativo,
-        texto: <><b style={{ color: C.text }}>{e.zap_numeros?.instancia}</b> entrou num grupo novo</>,
-      })),
-      ...(disparos.data ?? []).map((d) => ({
-        id: `d${d.id}`, quando: d.created_at, cor: C.aquecendo,
-        texto: <><b style={{ color: C.text }}>{d.zap_numeros?.instancia}</b> enviou mensagem no anúncio de <b style={{ color: C.text }}>{d.zap_disparo_execucoes?.zap_nichos?.nome}</b></>,
-      })),
-      ...(aquecimentos.data ?? []).map((a) => ({
-        id: `a${a.id}`, quando: a.created_at, cor: C.sub,
-        texto: <><b style={{ color: C.text }}>{a.zap_chips?.nome}</b> · semana {a.semana} · {TIPO_AQUECIMENTO_LABEL[a.tipo] ?? a.tipo}</>,
-      })),
-    ].sort((x, y) => new Date(y.quando) - new Date(x.quando)).slice(0, 60);
-
-    setEventos(lista);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    carregar();
-    const intervalo = setInterval(carregar, 30000); // atualiza sozinho a cada 30s
-    return () => clearInterval(intervalo);
-  }, []);
-
-  return (
-    <div className="max-w-[680px]">
-      <Header title="Atividade recente" sub="Últimas ações reais dos automations — entrada em grupo, disparo de anúncio e aquecimento. Atualiza sozinho a cada 30s." />
-      {loading ? (
-        <Spinner />
-      ) : eventos.length === 0 ? (
-        <EmptyState titulo="Nada por aqui ainda" sub="Assim que algum automation agir, aparece nessa lista." />
-      ) : (
-        <Card>
-          {eventos.map((ev, i) => (
-            <div key={ev.id} className="flex items-center gap-3 px-4 py-2.5" style={{ borderTop: i > 0 ? `1px solid ${C.line}` : "none" }}>
-              <Led color={ev.cor} />
-              <span className="text-[12px] zap-body flex-1" style={{ color: C.sub }}>{ev.texto}</span>
-              <span className="text-[11px] zap-mono shrink-0" style={{ color: C.sub }}>{tempoRelativo(ev.quando)}</span>
-            </div>
-          ))}
-        </Card>
-      )}
-    </div>
-  );
 }
 
 export default function App() {
@@ -1582,8 +1637,6 @@ export default function App() {
         return <ChipsTab chips={chips} loading={loading} onRecarregar={recarregar} />;
       case "operacao":
         return <OperacaoTab nichos={nichos} />;
-      case "atividade":
-        return <AtividadeTab />;
       default:
         return <NumerosTab nichos={nichos} numeros={numeros} cobertura={cobertura} chips={chips} loading={loading} onRecarregar={recarregar} />;
     }
