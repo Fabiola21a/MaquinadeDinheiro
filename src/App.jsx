@@ -812,7 +812,7 @@ function NovoNumeroForm({ nichos, onCriado, onFechar }) {
   const salvarAposConectar = async () => {
     const { error } = await supabase
       .from("zap_numeros")
-      .insert({ instancia: instancia.trim(), nicho_id: nichoId, status: "ativo" });
+      .insert({ instancia: instancia.trim(), nicho_id: nichoId, status: "aquecendo" });
     if (error) {
       setErro(error.code === "23505" ? "essa instância já existe" : error.message);
       return;
