@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Upload, Smartphone, Activity, Radio, RotateCcw,
-  Play, Pause, AlertTriangle, ChevronRight, ChevronDown, Plus, CheckCircle2, Loader2, Contact, Trash2, Pencil
+  Play, Pause, AlertTriangle, ChevronRight, ChevronDown, Plus, CheckCircle2, Loader2, Contact, Trash2, Pencil, Zap
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 
@@ -252,6 +252,7 @@ function Nav({ tab, setTab }) {
     { id: "importar", label: "Importar grupos", icon: Upload, n: "02" },
     { id: "numeros", label: "Progresso de entrada", icon: Activity, n: "03" },
     { id: "operacao", label: "Operação", icon: Radio, n: "04" },
+    { id: "atividade", label: "Atividade recente", icon: Zap, n: "05" },
   ];
   return (
     <div className="w-[236px] shrink-0 pr-5" style={{ borderRight: `1px solid ${C.line}` }}>
@@ -1492,6 +1493,83 @@ function OperacaoTab({ nichos }) {
   );
 }
 
+// ---------- Atividade recente ----------
+
+function tempoRelativo(iso) {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return "agora mesmo";
+  if (min < 60) return `há ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `há ${h}h`;
+  return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+const TIPO_AQUECIMENTO_LABEL = {
+  status: "postou status",
+  mensagem_semente: "mandou msg em grupo-semente",
+  mensagem_veterano: "trocou msg com número veterano",
+};
+
+function AtividadeTab() {
+  const [eventos, setEventos] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const carregar = async () => {
+    setLoading(true);
+    const [entradas, disparos, aquecimentos] = await Promise.all([
+      supabase.from("zap_entradas").select("id, created_at, status, zap_numeros(instancia), zap_grupos(id)").eq("status", "entrou").order("data_entrada", { ascending: false }).limit(40),
+      supabase.from("zap_disparo_log").select("id, created_at, status, zap_numeros(instancia), zap_disparo_execucoes(zap_nichos(nome))").eq("status", "enviado").order("enviado_em", { ascending: false }).limit(40),
+      supabase.from("zap_aquecimento_log").select("id, created_at, semana, tipo, zap_chips(nome)").order("created_at", { ascending: false }).limit(40),
+    ]);
+
+    const lista = [
+      ...(entradas.data ?? []).map((e) => ({
+        id: `e${e.id}`, quando: e.created_at, cor: C.ativo,
+        texto: <><b style={{ color: C.text }}>{e.zap_numeros?.instancia}</b> entrou num grupo novo</>,
+      })),
+      ...(disparos.data ?? []).map((d) => ({
+        id: `d${d.id}`, quando: d.created_at, cor: C.aquecendo,
+        texto: <><b style={{ color: C.text }}>{d.zap_numeros?.instancia}</b> enviou mensagem no anúncio de <b style={{ color: C.text }}>{d.zap_disparo_execucoes?.zap_nichos?.nome}</b></>,
+      })),
+      ...(aquecimentos.data ?? []).map((a) => ({
+        id: `a${a.id}`, quando: a.created_at, cor: C.sub,
+        texto: <><b style={{ color: C.text }}>{a.zap_chips?.nome}</b> · semana {a.semana} · {TIPO_AQUECIMENTO_LABEL[a.tipo] ?? a.tipo}</>,
+      })),
+    ].sort((x, y) => new Date(y.quando) - new Date(x.quando)).slice(0, 60);
+
+    setEventos(lista);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    carregar();
+    const intervalo = setInterval(carregar, 30000); // atualiza sozinho a cada 30s
+    return () => clearInterval(intervalo);
+  }, []);
+
+  return (
+    <div className="max-w-[680px]">
+      <Header title="Atividade recente" sub="Últimas ações reais dos automations — entrada em grupo, disparo de anúncio e aquecimento. Atualiza sozinho a cada 30s." />
+      {loading ? (
+        <Spinner />
+      ) : eventos.length === 0 ? (
+        <EmptyState titulo="Nada por aqui ainda" sub="Assim que algum automation agir, aparece nessa lista." />
+      ) : (
+        <Card>
+          {eventos.map((ev, i) => (
+            <div key={ev.id} className="flex items-center gap-3 px-4 py-2.5" style={{ borderTop: i > 0 ? `1px solid ${C.line}` : "none" }}>
+              <Led color={ev.cor} />
+              <span className="text-[12px] zap-body flex-1" style={{ color: C.sub }}>{ev.texto}</span>
+              <span className="text-[11px] zap-mono shrink-0" style={{ color: C.sub }}>{tempoRelativo(ev.quando)}</span>
+            </div>
+          ))}
+        </Card>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [tab, setTab] = useState("chips");
   const { nichos, numeros, cobertura, diarias, chips, loading, erro, recarregar } = useZapData();
@@ -1504,6 +1582,8 @@ export default function App() {
         return <ChipsTab chips={chips} loading={loading} onRecarregar={recarregar} />;
       case "operacao":
         return <OperacaoTab nichos={nichos} />;
+      case "atividade":
+        return <AtividadeTab />;
       default:
         return <NumerosTab nichos={nichos} numeros={numeros} cobertura={cobertura} chips={chips} loading={loading} onRecarregar={recarregar} />;
     }
