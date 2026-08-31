@@ -3,7 +3,6 @@ import {
   Upload, Smartphone, Activity, Radio, RotateCcw,
   Play, Pause, AlertTriangle, ChevronRight, ChevronDown, Plus, CheckCircle2, Loader2, Contact, Trash2, Pencil
 } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./lib/supabaseClient";
 
 const FONTS = (
@@ -249,11 +248,10 @@ function CoverageStrip({ numeros, cobertura, loading }) {
 
 function Nav({ tab, setTab }) {
   const items = [
-    { id: "importar", label: "Importar grupos", icon: Upload, n: "01" },
-    { id: "numeros", label: "Números", icon: Smartphone, n: "02" },
-    { id: "progresso", label: "Progresso de entrada", icon: Activity, n: "03" },
+    { id: "chips", label: "Cadastro de números", icon: Contact, n: "01" },
+    { id: "importar", label: "Importar grupos", icon: Upload, n: "02" },
+    { id: "numeros", label: "Progresso de entrada", icon: Activity, n: "03" },
     { id: "operacao", label: "Operação", icon: Radio, n: "04" },
-    { id: "chips", label: "Cadastro de números", icon: Contact, n: "05" },
   ];
   return (
     <div className="w-[236px] shrink-0 pr-5" style={{ borderRight: `1px solid ${C.line}` }}>
@@ -894,7 +892,7 @@ function NumerosTab({ nichos, numeros, cobertura, loading, onRecarregar }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <Header title="Números" sub={`${numeros.length} números cadastrados · limite de 1.000 grupos e 100 entradas/dia cada, por nicho`} />
+        <Header title="Progresso de entrada" sub={`${numeros.length} números cadastrados · limite de 900 grupos e 100 entradas/dia cada, por nicho`} />
         <button onClick={() => setCriando((c) => !c)} disabled={nichos.length === 0} className="px-3 py-2 text-[12px] rounded-[4px] zap-body transition-colors shrink-0" style={{ border: `1px solid ${C.line}`, color: C.sub, opacity: nichos.length === 0 ? 0.4 : 1 }}>
           + Cadastrar número
         </button>
@@ -916,84 +914,6 @@ function NumerosTab({ nichos, numeros, cobertura, loading, onRecarregar }) {
           ))}
         </>
       )}
-    </div>
-  );
-}
-
-// ---------- Progresso ----------
-
-function ProgressoTab({ numeros, cobertura, diarias, loading }) {
-  const total = numeros.reduce((a, n) => a + n.entrou, 0);
-  const catalogoTotal = cobertura.reduce((a, c) => a + c.total_grupos, 0);
-
-  const chartData = diarias.map((d) => ({
-    dia: new Date(d.dia).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
-    entradas: d.entradas,
-  }));
-
-  return (
-    <div>
-      <Header title="Progresso de entrada" sub={`${total.toLocaleString("pt-BR")} de ${catalogoTotal.toLocaleString("pt-BR")} grupos do catálogo já têm um número dentro`} />
-      <Card className="p-5 mb-4">
-        <div className="zap-mono text-[10px] uppercase tracking-wide mb-3" style={{ color: C.sub }}>Entradas por dia</div>
-        {loading ? (
-          <Spinner />
-        ) : chartData.length === 0 ? (
-          <EmptyState titulo="Ainda sem entradas registradas" sub="O gráfico aparece assim que os números começarem a entrar nos grupos." />
-        ) : (
-          <div className="h-[180px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <XAxis dataKey="dia" tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "rgba(255,255,255,0.35)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 4, fontSize: 12 }} labelStyle={{ color: "rgba(255,255,255,0.6)" }} />
-                <Line type="monotone" dataKey="entradas" stroke={C.ativo} strokeWidth={2} dot={{ r: 3, fill: C.ativo }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </Card>
-      <Card>
-        {loading ? (
-          <Spinner />
-        ) : numeros.length === 0 ? (
-          <EmptyState titulo="Nenhum número cadastrado" sub="Cadastre números na aba Números para ver o progresso aqui." />
-        ) : (
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="text-left zap-mono text-[10px] uppercase tracking-wide" style={{ color: C.sub }}>
-                <th className="px-4 py-3 font-normal">Instância</th>
-                <th className="px-4 py-3 font-normal">Nicho</th>
-                <th className="px-4 py-3 font-normal">Entrou</th>
-                <th className="px-4 py-3 font-normal">Faltam</th>
-                <th className="px-4 py-3 font-normal">Progresso</th>
-              </tr>
-            </thead>
-            <tbody>
-              {numeros.map((n) => {
-                const pct = Math.round((n.entrou / n.limite_grupos) * 100);
-                return (
-                  <tr key={n.id} style={{ borderTop: `1px solid ${C.line}` }}>
-                    <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{n.instancia}</td>
-                    <td className="px-4 py-3"><NichoTag nicho={n.nicho} /></td>
-                    <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{n.entrou}</td>
-                    <td className="px-4 py-3 zap-mono" style={{ color: C.sub }}>{n.limite_grupos - n.entrou}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 w-40">
-                        <div className="h-1.5 flex-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: STATUS_STYLE[n.status]?.color ?? C.ativo }} />
-                        </div>
-                        <span className="text-[11px] zap-mono w-8" style={{ color: C.sub }}>{pct}%</span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </Card>
     </div>
   );
 }
@@ -1262,15 +1182,13 @@ function OperacaoTab({ nichos }) {
 }
 
 export default function App() {
-  const [tab, setTab] = useState("numeros");
+  const [tab, setTab] = useState("chips");
   const { nichos, numeros, cobertura, diarias, chips, loading, erro, recarregar } = useZapData();
 
   const Content = useMemo(() => {
     switch (tab) {
       case "importar":
         return <ImportarTab nichos={nichos} onDadosMudaram={recarregar} />;
-      case "progresso":
-        return <ProgressoTab numeros={numeros} cobertura={cobertura} diarias={diarias} loading={loading} />;
       case "chips":
         return <ChipsTab chips={chips} loading={loading} onRecarregar={recarregar} />;
       case "operacao":
