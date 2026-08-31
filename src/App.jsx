@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Upload, Smartphone, Activity, Radio, RotateCcw,
-  Play, Pause, AlertTriangle, ChevronRight, ChevronDown, Plus, CheckCircle2, Loader2
+  Play, Pause, AlertTriangle, ChevronRight, ChevronDown, Plus, CheckCircle2, Loader2, Contact, Trash2
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "./lib/supabaseClient";
@@ -40,6 +40,7 @@ function useZapData() {
   const [numeros, setNumeros] = useState([]);
   const [cobertura, setCobertura] = useState([]);
   const [diarias, setDiarias] = useState([]);
+  const [chips, setChips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(null);
 
@@ -47,20 +48,23 @@ function useZapData() {
     setLoading(true);
     setErro(null);
     try {
-      const [n, num, cov, dia] = await Promise.all([
+      const [n, num, cov, dia, chp] = await Promise.all([
         supabase.from("zap_nichos").select("id, nome").order("nome"),
         supabase.from("zap_vw_numeros").select("*").order("instancia"),
         supabase.from("zap_vw_nichos_cobertura").select("*"),
         supabase.from("zap_vw_entradas_diarias").select("*").order("dia", { ascending: true }),
+        supabase.from("zap_chips").select("*, zap_numeros(instancia, status)").order("criado_em"),
       ]);
       if (n.error) throw n.error;
       if (num.error) throw num.error;
       if (cov.error) throw cov.error;
       if (dia.error) throw dia.error;
+      if (chp.error) throw chp.error;
       setNichos(n.data ?? []);
       setNumeros(num.data ?? []);
       setCobertura(cov.data ?? []);
       setDiarias(dia.data ?? []);
+      setChips(chp.data ?? []);
     } catch (e) {
       setErro(e.message ?? String(e));
     } finally {
@@ -70,7 +74,7 @@ function useZapData() {
 
   useEffect(() => { carregar(); }, [carregar]);
 
-  return { nichos, numeros, cobertura, diarias, loading, erro, recarregar: carregar };
+  return { nichos, numeros, cobertura, diarias, chips, loading, erro, recarregar: carregar };
 }
 
 // ---------- ui bits ----------
@@ -249,6 +253,7 @@ function Nav({ tab, setTab }) {
     { id: "numeros", label: "Números", icon: Smartphone, n: "02" },
     { id: "progresso", label: "Progresso de entrada", icon: Activity, n: "03" },
     { id: "operacao", label: "Operação", icon: Radio, n: "04" },
+    { id: "chips", label: "Cadastro de números", icon: Contact, n: "05" },
   ];
   return (
     <div className="w-[236px] shrink-0 pr-5" style={{ borderRight: `1px solid ${C.line}` }}>
@@ -993,6 +998,146 @@ function ProgressoTab({ numeros, cobertura, diarias, loading }) {
   );
 }
 
+// ---------- Cadastro de números (inventário de chips) ----------
+
+function idadeTexto(criadoEm) {
+  const criado = new Date(criadoEm + "T00:00:00");
+  const hoje = new Date();
+  let meses = (hoje.getFullYear() - criado.getFullYear()) * 12 + (hoje.getMonth() - criado.getMonth());
+  let dias = hoje.getDate() - criado.getDate();
+  if (dias < 0) {
+    meses -= 1;
+    const diaAnterior = new Date(hoje.getFullYear(), hoje.getMonth(), 0).getDate();
+    dias += diaAnterior;
+  }
+  if (meses <= 0 && dias === 0) return "hoje";
+  const partes = [];
+  if (meses > 0) partes.push(`${meses} ${meses === 1 ? "mês" : "meses"}`);
+  partes.push(`${dias} ${dias === 1 ? "dia" : "dias"}`);
+  return partes.join(" e ");
+}
+
+function NovoChipForm({ onCriado, onFechar }) {
+  const [numero, setNumero] = useState("");
+  const [nome, setNome] = useState("");
+  const [local, setLocal] = useState("");
+  const [criadoEm, setCriadoEm] = useState(() => new Date().toISOString().slice(0, 10));
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState(null);
+
+  const salvar = async () => {
+    if (!numero.trim()) return;
+    setSalvando(true);
+    setErro(null);
+    const { error } = await supabase.from("zap_chips").insert({
+      numero: numero.trim(),
+      nome: nome.trim() || null,
+      local: local.trim() || null,
+      criado_em: criadoEm,
+    });
+    setSalvando(false);
+    if (error) {
+      setErro(error.code === "23505" ? "esse número já está cadastrado" : error.message);
+      return;
+    }
+    onCriado();
+    onFechar();
+  };
+
+  return (
+    <Card className="p-4 mb-4">
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="número (com DDI)" className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} />
+        <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="nome / apelido" className="px-3 py-2 rounded-[4px] text-[12px] zap-body outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} />
+        <input value={local} onChange={(e) => setLocal(e.target.value)} placeholder="local (tablet, Memu, celular...)" className="px-3 py-2 rounded-[4px] text-[12px] zap-body outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} />
+        <div className="flex items-center gap-2">
+          <span className="text-[11px]" style={{ color: C.sub }}>criado em</span>
+          <input type="date" value={criadoEm} onChange={(e) => setCriadoEm(e.target.value)} className="px-2 py-2 rounded-[4px] text-[12px] zap-mono outline-none flex-1" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} />
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <button onClick={salvar} disabled={salvando || !numero.trim()} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
+          {salvando ? "salvando..." : "Salvar"}
+        </button>
+        <button onClick={onFechar} className="text-[12px]" style={{ color: C.sub }}>cancelar</button>
+      </div>
+      {erro && <div className="text-[11px] mt-2" style={{ color: C.banido }}>{erro}</div>}
+    </Card>
+  );
+}
+
+function ChipsTab({ chips, loading, onRecarregar }) {
+  const [criando, setCriando] = useState(false);
+
+  const deletar = async (chip) => {
+    await supabase.from("zap_chips").delete().eq("id", chip.id);
+    onRecarregar();
+  };
+
+  const disponiveis = chips.filter((c) => !c.zap_numeros || c.zap_numeros.status === "banido");
+  const emUso = chips.filter((c) => c.zap_numeros && c.zap_numeros.status !== "banido");
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <Header title="Cadastro de números" sub={`${chips.length} chips cadastrados · ${disponiveis.length} disponíveis pra usar agora`} />
+        <button onClick={() => setCriando((c) => !c)} className="px-3 py-2 text-[12px] rounded-[4px] zap-body transition-colors shrink-0" style={{ border: `1px solid ${C.line}`, color: C.sub }}>
+          + Cadastrar chip
+        </button>
+      </div>
+
+      {criando && <NovoChipForm onCriado={onRecarregar} onFechar={() => setCriando(false)} />}
+
+      {loading ? (
+        <Spinner />
+      ) : chips.length === 0 ? (
+        <EmptyState titulo="Nenhum chip cadastrado" sub="Cadastre seus números aqui pra ter um inventário de reserva." />
+      ) : (
+        <Card>
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="text-left zap-mono text-[10px] uppercase tracking-wide" style={{ color: C.sub }}>
+                <th className="px-4 py-3 font-normal">Nome</th>
+                <th className="px-4 py-3 font-normal">Número</th>
+                <th className="px-4 py-3 font-normal">Local</th>
+                <th className="px-4 py-3 font-normal">Idade</th>
+                <th className="px-4 py-3 font-normal">Uso</th>
+                <th className="px-4 py-3 font-normal"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...emUso, ...disponiveis].map((c) => (
+                <tr key={c.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                  <td className="px-4 py-3 zap-body" style={{ color: C.text }}>{c.nome || <span style={{ color: C.sub }}>—</span>}</td>
+                  <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{c.numero}</td>
+                  <td className="px-4 py-3 zap-body" style={{ color: C.sub }}>{c.local || "—"}</td>
+                  <td className="px-4 py-3 zap-mono" style={{ color: C.sub }}>{idadeTexto(c.criado_em)}</td>
+                  <td className="px-4 py-3">
+                    {c.zap_numeros && c.zap_numeros.status !== "banido" ? (
+                      <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
+                        <Led color={C.ativo} /> em uso ({c.zap_numeros.instancia})
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.aquecendo }}>
+                        <Led color={C.aquecendo} /> disponível
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button onClick={() => deletar(c)} className="p-1.5 rounded-[4px]" style={{ color: C.sub }} title="deletar chip">
+                      <Trash2 size={13} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ---------- Operação (ainda mockada — combinado deixar pra depois) ----------
 
 function OperacaoTab({ nichos }) {
@@ -1062,7 +1207,7 @@ function OperacaoTab({ nichos }) {
 
 export default function App() {
   const [tab, setTab] = useState("numeros");
-  const { nichos, numeros, cobertura, diarias, loading, erro, recarregar } = useZapData();
+  const { nichos, numeros, cobertura, diarias, chips, loading, erro, recarregar } = useZapData();
 
   const Content = useMemo(() => {
     switch (tab) {
@@ -1070,12 +1215,14 @@ export default function App() {
         return <ImportarTab nichos={nichos} onDadosMudaram={recarregar} />;
       case "progresso":
         return <ProgressoTab numeros={numeros} cobertura={cobertura} diarias={diarias} loading={loading} />;
+      case "chips":
+        return <ChipsTab chips={chips} loading={loading} onRecarregar={recarregar} />;
       case "operacao":
         return <OperacaoTab nichos={nichos} />;
       default:
         return <NumerosTab nichos={nichos} numeros={numeros} cobertura={cobertura} loading={loading} onRecarregar={recarregar} />;
     }
-  }, [tab, nichos, numeros, cobertura, diarias, loading, recarregar]);
+  }, [tab, nichos, numeros, cobertura, diarias, chips, loading, recarregar]);
 
   return (
     <div className="min-h-screen w-full zap-body" style={{ background: C.bg, color: C.text }}>
