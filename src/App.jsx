@@ -1400,6 +1400,17 @@ function OperacaoTab({ nichos }) {
         </button>
       </div>
 
+      <Card className="p-4 mb-6">
+        <div className="text-[10px] zap-mono uppercase tracking-wide mb-2" style={{ color: C.sub }}>Regras de segurança do disparo</div>
+        <ul className="text-[12px] zap-body flex flex-col gap-1" style={{ color: C.sub }}>
+          <li>• Delay de <span style={{ color: C.text }}>30 a 60 segundos</span> entre uma mensagem e outra, sempre variando (nunca fixo)</li>
+          <li>• Lote de <span style={{ color: C.text }}>10 a 15 mensagens</span>, depois <span style={{ color: C.text }}>pausa de 5 a 10 minutos</span> antes de continuar</li>
+          <li>• Cada envio é único: sua versão de texto + emoji/pontuação variados + caractere invisível — nunca duas mensagens idênticas</li>
+          <li>• Cada anúncio pertence a <span style={{ color: C.text }}>1 nicho só</span>, mas você pode ter <span style={{ color: C.text }}>vários anúncios simultâneos</span> no mesmo nicho</li>
+          <li>• Se o WhatsApp bloquear um número (rate-overlimit), ele para na hora e só tenta de novo no próximo ciclo (6h de Brasília)</li>
+        </ul>
+      </Card>
+
       {criando && (
         <Card className="p-5 mb-4">
           <div className="text-[12px] zap-body mb-2" style={{ color: C.sub }}>Nicho deste anúncio</div>
