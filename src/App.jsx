@@ -1065,6 +1065,19 @@ function StatusConexaoChip({ chip, onRecarregar, onEstadoChange }) {
     );
   }
 
+  // chip que nunca conectou precisa "amadurecer" 7 dias (contando a idade
+  // cadastrada) antes de poder conectar pela primeira vez. Reconexão de um
+  // chip que já existiu no Evolution antes não passa por essa trava de novo.
+  const idadeDias = (Date.now() - new Date(chip.criado_em + "T00:00:00").getTime()) / (24 * 60 * 60 * 1000);
+  const faltamDias = Math.ceil(7 - idadeDias);
+  if (!existeNoEvolution && faltamDias > 0) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.sub }}>
+        <Led color={C.pausado} /> amadurecendo — faltam {faltamDias} {faltamDias === 1 ? "dia" : "dias"} pra poder conectar
+      </span>
+    );
+  }
+
   return (
     <div className="flex items-center gap-2">
       <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.banido }}>
