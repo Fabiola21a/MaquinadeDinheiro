@@ -494,11 +494,12 @@ function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
   const [aberto, setAberto] = useState(true);
   const cobertos = numeros.reduce((a, n) => a + n.entrou, 0);
   const semNumero = Math.max(totalCatalogo - cobertos, 0);
-  const capacidadeDisponivel = numeros
-    .filter((n) => n.status === "ativo" || n.status === "aquecendo")
-    .reduce((a, n) => a + (n.limite_grupos - n.entrou), 0);
-  const faltaCapacidade = Math.max(semNumero - capacidadeDisponivel, 0);
-  const numerosASugerir = Math.ceil(faltaCapacidade / 1000);
+  // conta simples: quantos números o nicho precisa no total (catálogo ÷ limite
+  // padrão, arredondado pra cima) menos quantos já existem — conta todos os
+  // números, seja qual for o status (pausado é temporário, não perde a vaga).
+  const LIMITE_PADRAO_NOVO_NUMERO = 900;
+  const numerosNecessarios = Math.ceil(totalCatalogo / LIMITE_PADRAO_NOVO_NUMERO);
+  const numerosASugerir = Math.max(numerosNecessarios - numeros.length, 0);
 
   return (
     <Card className="mb-4 overflow-hidden">
@@ -515,7 +516,7 @@ function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
           <span style={{ color: semNumero > 0 ? C.aquecendo : C.sub }}>
             sem número <span className="font-semibold">{semNumero.toLocaleString("pt-BR")}</span>
           </span>
-          {faltaCapacidade > 0 ? (
+          {numerosASugerir > 0 ? (
             <span className="flex items-center gap-1.5 px-2 py-1 rounded-[3px]" style={{ color: C.banido, background: "rgba(225,88,80,0.1)" }}>
               <AlertTriangle size={11} /> comprar +{numerosASugerir} número{numerosASugerir > 1 ? "s" : ""}
             </span>
