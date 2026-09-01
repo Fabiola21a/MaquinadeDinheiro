@@ -499,17 +499,33 @@ function horaBrasilia(iso) {
 
 function LogsNumeroButton({ numero }) {
   const [aberto, setAberto] = useState(false);
-  const [entradas, setEntradas] = useState(null);
-  const [bloqueios, setBloqueios] = useState(null);
+  const [linhas, setLinhas] = useState(null);
 
   const abrir = async () => {
     setAberto(true);
-    const [e, b] = await Promise.all([
-      supabase.from("zap_entradas").select("id, grupo_id, data_entrada").eq("numero_id", numero.id).eq("status", "entrou").order("data_entrada", { ascending: false }).limit(10),
-      supabase.from("zap_rate_limit_log").select("id, grupo_id, created_at").eq("numero_id", numero.id).order("created_at", { ascending: false }).limit(10),
+    const [entradas, bloqueios] = await Promise.all([
+      supabase.from("zap_entradas").select("id, grupo_id, status, data_entrada, created_at").eq("numero_id", numero.id).order("created_at", { ascending: false }).limit(30),
+      supabase.from("zap_rate_limit_log").select("id, grupo_id, created_at").eq("numero_id", numero.id).order("created_at", { ascending: false }).limit(30),
     ]);
-    setEntradas(e.data ?? []);
-    setBloqueios(b.data ?? []);
+
+    const combinado = [
+      ...(entradas.data ?? []).map((e) => ({
+        id: `e${e.id}`,
+        quando: e.data_entrada ?? e.created_at,
+        grupo: e.grupo_id,
+        tipo: e.status === "entrou" ? "entrou" : "erro",
+        cor: e.status === "entrou" ? C.ativo : C.banido,
+      })),
+      ...(bloqueios.data ?? []).map((b) => ({
+        id: `b${b.id}`,
+        quando: b.created_at,
+        grupo: b.grupo_id,
+        tipo: "bloqueio (rate-overlimit)",
+        cor: C.banido,
+      })),
+    ].sort((a, b) => new Date(b.quando) - new Date(a.quando)).slice(0, 40);
+
+    setLinhas(combinado);
   };
 
   return (
@@ -521,42 +537,20 @@ function LogsNumeroButton({ numero }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setAberto(false)}>
           <div onClick={(e) => e.stopPropagation()} className="w-full max-w-[480px] rounded-[6px] p-5" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
             <div className="flex items-center justify-between mb-3">
-              <div className="text-[13px] zap-mono" style={{ color: C.text }}>{numero.instancia}</div>
+              <div className="text-[13px] zap-mono" style={{ color: C.text }}>{numero.instancia} · log completo</div>
               <button onClick={() => setAberto(false)} className="text-[12px]" style={{ color: C.sub }}>fechar</button>
             </div>
 
-            <div className="text-[10px] zap-mono uppercase tracking-wide mb-1.5" style={{ color: C.sub }}>Último envio</div>
-            {entradas === null ? (
-              <div className="text-[12px] zap-body mb-4" style={{ color: C.sub }}>carregando...</div>
-            ) : entradas.length === 0 ? (
-              <div className="text-[12px] zap-body mb-4" style={{ color: C.sub }}>nenhuma entrada registrada</div>
-            ) : (
-              <div className="text-[12px] zap-mono mb-4" style={{ color: C.ativo }}>
-                grupo #{entradas[0].grupo_id} · {horaBrasilia(entradas[0].data_entrada)}
-              </div>
-            )}
-
-            <div className="text-[10px] zap-mono uppercase tracking-wide mb-1.5" style={{ color: C.sub }}>Últimas entradas</div>
-            <div className="flex flex-col gap-1 mb-4 max-h-[140px] overflow-y-auto">
-              {(entradas ?? []).map((e) => (
-                <div key={e.id} className="flex items-center justify-between text-[11px] zap-mono">
-                  <span style={{ color: C.text }}>grupo #{e.grupo_id}</span>
-                  <span style={{ color: C.sub }}>{horaBrasilia(e.data_entrada)}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="text-[10px] zap-mono uppercase tracking-wide mb-1.5" style={{ color: C.sub }}>Bloqueios (rate-overlimit)</div>
-            {bloqueios === null ? (
+            {linhas === null ? (
               <div className="text-[12px] zap-body" style={{ color: C.sub }}>carregando...</div>
-            ) : bloqueios.length === 0 ? (
-              <div className="text-[12px] zap-body" style={{ color: C.sub }}>nenhum registrado</div>
+            ) : linhas.length === 0 ? (
+              <div className="text-[12px] zap-body" style={{ color: C.sub }}>nenhum registro ainda</div>
             ) : (
-              <div className="flex flex-col gap-1">
-                {bloqueios.map((b) => (
-                  <div key={b.id} className="flex items-center justify-between text-[11px] zap-mono">
-                    <span style={{ color: C.banido }}>grupo #{b.grupo_id}</span>
-                    <span style={{ color: C.sub }}>{horaBrasilia(b.created_at)}</span>
+              <div className="flex flex-col gap-1 max-h-[420px] overflow-y-auto">
+                {linhas.map((l) => (
+                  <div key={l.id} className="flex items-center justify-between text-[11px] zap-mono py-0.5">
+                    <span style={{ color: l.cor }}>grupo #{l.grupo} · {l.tipo}</span>
+                    <span style={{ color: C.sub }} className="shrink-0 ml-3">{horaBrasilia(l.quando)}</span>
                   </div>
                 ))}
               </div>
