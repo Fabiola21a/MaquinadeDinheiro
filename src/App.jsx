@@ -490,6 +490,84 @@ function DeletarNumeroButton({ numero, onDeletado }) {
   );
 }
 
+function horaBrasilia(iso) {
+  return new Date(iso).toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+  }) + " (Brasília)";
+}
+
+function LogsNumeroButton({ numero }) {
+  const [aberto, setAberto] = useState(false);
+  const [entradas, setEntradas] = useState(null);
+  const [bloqueios, setBloqueios] = useState(null);
+
+  const abrir = async () => {
+    setAberto(true);
+    const [e, b] = await Promise.all([
+      supabase.from("zap_entradas").select("id, grupo_id, data_entrada").eq("numero_id", numero.id).eq("status", "entrou").order("data_entrada", { ascending: false }).limit(10),
+      supabase.from("zap_rate_limit_log").select("id, grupo_id, created_at").eq("numero_id", numero.id).order("created_at", { ascending: false }).limit(10),
+    ]);
+    setEntradas(e.data ?? []);
+    setBloqueios(b.data ?? []);
+  };
+
+  return (
+    <>
+      <button onClick={abrir} className="px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body" style={{ border: `1px solid ${C.line}`, color: C.sub }}>
+        logs
+      </button>
+      {aberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setAberto(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-[480px] rounded-[6px] p-5" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[13px] zap-mono" style={{ color: C.text }}>{numero.instancia}</div>
+              <button onClick={() => setAberto(false)} className="text-[12px]" style={{ color: C.sub }}>fechar</button>
+            </div>
+
+            <div className="text-[10px] zap-mono uppercase tracking-wide mb-1.5" style={{ color: C.sub }}>Último envio</div>
+            {entradas === null ? (
+              <div className="text-[12px] zap-body mb-4" style={{ color: C.sub }}>carregando...</div>
+            ) : entradas.length === 0 ? (
+              <div className="text-[12px] zap-body mb-4" style={{ color: C.sub }}>nenhuma entrada registrada</div>
+            ) : (
+              <div className="text-[12px] zap-mono mb-4" style={{ color: C.ativo }}>
+                grupo #{entradas[0].grupo_id} · {horaBrasilia(entradas[0].data_entrada)}
+              </div>
+            )}
+
+            <div className="text-[10px] zap-mono uppercase tracking-wide mb-1.5" style={{ color: C.sub }}>Últimas entradas</div>
+            <div className="flex flex-col gap-1 mb-4 max-h-[140px] overflow-y-auto">
+              {(entradas ?? []).map((e) => (
+                <div key={e.id} className="flex items-center justify-between text-[11px] zap-mono">
+                  <span style={{ color: C.text }}>grupo #{e.grupo_id}</span>
+                  <span style={{ color: C.sub }}>{horaBrasilia(e.data_entrada)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="text-[10px] zap-mono uppercase tracking-wide mb-1.5" style={{ color: C.sub }}>Bloqueios (rate-overlimit)</div>
+            {bloqueios === null ? (
+              <div className="text-[12px] zap-body" style={{ color: C.sub }}>carregando...</div>
+            ) : bloqueios.length === 0 ? (
+              <div className="text-[12px] zap-body" style={{ color: C.sub }}>nenhum registrado</div>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {bloqueios.map((b) => (
+                  <div key={b.id} className="flex items-center justify-between text-[11px] zap-mono">
+                    <span style={{ color: C.banido }}>grupo #{b.grupo_id}</span>
+                    <span style={{ color: C.sub }}>{horaBrasilia(b.created_at)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
   const [aberto, setAberto] = useState(true);
   const cobertos = numeros.reduce((a, n) => a + n.entrou, 0);
@@ -561,7 +639,10 @@ function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <DeletarNumeroButton numero={n} onDeletado={onRecarregar} />
+                      <div className="inline-flex items-center gap-1.5">
+                        <LogsNumeroButton numero={n} />
+                        <DeletarNumeroButton numero={n} onDeletado={onRecarregar} />
+                      </div>
                     </td>
                   </tr>
                 </React.Fragment>
