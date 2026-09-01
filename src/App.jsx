@@ -1391,25 +1391,39 @@ function OperacaoTab({ nichos }) {
     carregar();
   };
 
+  const [regrasAbertas, setRegrasAbertas] = useState(false);
+
   return (
     <div className="max-w-[680px]">
       <div className="flex items-center justify-between mb-6">
         <Header title="Operação" sub="Disparo contínuo por nicho — pode ter mais de um anúncio rodando ao mesmo tempo, mesmo no mesmo nicho." />
-        <button onClick={() => setCriando((c) => !c)} disabled={nichos.length === 0} className="px-3 py-2 text-[12px] rounded-[4px] zap-body transition-colors shrink-0" style={{ border: `1px solid ${C.line}`, color: C.sub, opacity: nichos.length === 0 ? 0.4 : 1 }}>
-          + Novo anúncio
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={() => setRegrasAbertas(true)} className="px-3 py-2 text-[12px] rounded-[4px] zap-body transition-colors" style={{ border: `1px solid ${C.line}`, color: C.sub }}>
+            Regras
+          </button>
+          <button onClick={() => setCriando((c) => !c)} disabled={nichos.length === 0} className="px-3 py-2 text-[12px] rounded-[4px] zap-body transition-colors" style={{ border: `1px solid ${C.line}`, color: C.sub, opacity: nichos.length === 0 ? 0.4 : 1 }}>
+            + Novo anúncio
+          </button>
+        </div>
       </div>
 
-      <Card className="p-4 mb-6">
-        <div className="text-[10px] zap-mono uppercase tracking-wide mb-2" style={{ color: C.sub }}>Regras de segurança do disparo</div>
-        <ul className="text-[12px] zap-body flex flex-col gap-1" style={{ color: C.sub }}>
-          <li>• Delay de <span style={{ color: C.text }}>30 a 60 segundos</span> entre uma mensagem e outra, sempre variando (nunca fixo)</li>
-          <li>• Lote de <span style={{ color: C.text }}>10 a 15 mensagens</span>, depois <span style={{ color: C.text }}>pausa de 5 a 10 minutos</span> antes de continuar</li>
-          <li>• Cada envio é único: sua versão de texto + emoji/pontuação variados + caractere invisível — nunca duas mensagens idênticas</li>
-          <li>• Cada anúncio pertence a <span style={{ color: C.text }}>1 nicho só</span>, mas você pode ter <span style={{ color: C.text }}>vários anúncios simultâneos</span> no mesmo nicho</li>
-          <li>• Se o WhatsApp bloquear um número (rate-overlimit), ele para na hora e só tenta de novo no próximo ciclo (6h de Brasília)</li>
-        </ul>
-      </Card>
+      {regrasAbertas && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setRegrasAbertas(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-[520px] rounded-[6px] p-5" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[10px] zap-mono uppercase tracking-wide" style={{ color: C.sub }}>Regras de segurança do disparo</div>
+              <button onClick={() => setRegrasAbertas(false)} className="text-[12px]" style={{ color: C.sub }}>fechar</button>
+            </div>
+            <ul className="text-[12px] zap-body flex flex-col gap-2" style={{ color: C.sub }}>
+              <li>• Delay de <span style={{ color: C.text }}>30 a 60 segundos</span> entre uma mensagem e outra, sempre variando (nunca fixo)</li>
+              <li>• Lote de <span style={{ color: C.text }}>10 a 15 mensagens</span>, depois <span style={{ color: C.text }}>pausa de 5 a 10 minutos</span> antes de continuar</li>
+              <li>• Cada envio é único: sua versão de texto + emoji/pontuação variados + caractere invisível — nunca duas mensagens idênticas</li>
+              <li>• Cada anúncio pertence a <span style={{ color: C.text }}>1 nicho só</span>, mas você pode ter <span style={{ color: C.text }}>vários anúncios simultâneos</span> no mesmo nicho</li>
+              <li>• Se o WhatsApp bloquear um número (rate-overlimit), ele para na hora e só tenta de novo depois de <span style={{ color: C.text }}>2 dias</span> (no próximo ciclo de 6h de Brasília)</li>
+            </ul>
+          </div>
+        </div>
+      )}
 
       {criando && (
         <Card className="p-5 mb-4">
