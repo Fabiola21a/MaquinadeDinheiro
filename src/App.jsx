@@ -1184,6 +1184,23 @@ function ChipRow({ chip, onRecarregar }) {
     onRecarregar();
   };
 
+  const [mandandoAquecimento, setMandandoAquecimento] = useState(false);
+  const mandarProAquecimento = async () => {
+    if (!chip.zap_numeros) return;
+    setMandandoAquecimento(true);
+    // solta o número atual (mesmo efeito de "Deletar número" no Progresso de
+    // entrada) e reinicia o relógio do aquecimento — não mexe na idade do chip
+    await supabase.from("zap_entradas").delete().eq("numero_id", chip.zap_numero_id);
+    await supabase.from("zap_numeros").delete().eq("id", chip.zap_numero_id);
+    await supabase.from("zap_chips").update({
+      aquecimento_iniciado_em: new Date().toISOString(),
+      aquecimento_concluido: false,
+      proxima_acao_aquecimento: null,
+    }).eq("id", chip.id);
+    setMandandoAquecimento(false);
+    onRecarregar();
+  };
+
   const salvar = async () => {
     if (!numero.trim()) return;
     setSalvando(true);
@@ -1235,9 +1252,14 @@ function ChipRow({ chip, onRecarregar }) {
       <td className="px-4 py-3">
         <div>
           {chip.zap_numeros && chip.zap_numeros.status !== "banido" ? (
-            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.ativo }}>
-              <Led color={C.ativo} /> em uso ({chip.zap_numeros.instancia})
-            </span>
+            <div className="mb-1">
+              <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
+                <Led color={C.ativo} /> em uso ({chip.zap_numeros.instancia})
+              </span>
+              <button onClick={mandarProAquecimento} disabled={mandandoAquecimento} className="block mt-1 text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.aquecendo}55`, color: C.aquecendo }}>
+                {mandandoAquecimento ? "enviando..." : "🔥 mandar pro aquecimento"}
+              </button>
+            </div>
           ) : chip.aquecimento_concluido ? (
             <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.ativo }}>
               <Led color={C.ativo} /> pronto — disponível pra puxar
