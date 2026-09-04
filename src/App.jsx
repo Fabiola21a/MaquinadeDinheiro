@@ -1279,11 +1279,9 @@ function ChipRow({ chip, onRecarregar }) {
               <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.sub }}>
                 <Led color={C.pausado} /> aquecimento não iniciado
               </span>
-              {estadoConexao === "open" && (
-                <button onClick={iniciarAquecimento} disabled={iniciando} className="block mt-1 text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.ativo}55`, color: C.ativo }}>
-                  {iniciando ? "iniciando..." : "▶ iniciar aquecimento"}
-                </button>
-              )}
+              <button onClick={iniciarAquecimento} disabled={iniciando} className="block mt-1 text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.ativo}55`, color: C.ativo }}>
+                {iniciando ? "iniciando..." : "▶ iniciar aquecimento"}
+              </button>
             </div>
           )}
           <StatusConexaoChip chip={chip} onRecarregar={onRecarregar} onEstadoChange={setEstadoConexao} />
