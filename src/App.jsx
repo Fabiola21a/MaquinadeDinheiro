@@ -1177,9 +1177,14 @@ function ChipRow({ chip, onRecarregar }) {
   const [estadoConexao, setEstadoConexao] = useState(null);
   const [iniciando, setIniciando] = useState(false);
 
-  const iniciarAquecimento = async () => {
+  const iniciarAquecimento = async (pularSemana1 = false) => {
     setIniciando(true);
-    await supabase.from("zap_chips").update({ aquecimento_iniciado_em: new Date().toISOString() }).eq("id", chip.id);
+    // pular semana 1 = fingir que o aquecimento começou 7 dias atrás, então
+    // semanaAquecimento() já calcula semana 2 desde o primeiro reload
+    const inicio = pularSemana1
+      ? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000 - 60 * 1000)
+      : new Date();
+    await supabase.from("zap_chips").update({ aquecimento_iniciado_em: inicio.toISOString(), proxima_acao_aquecimento: null }).eq("id", chip.id);
     setIniciando(false);
     onRecarregar();
   };
@@ -1273,15 +1278,25 @@ function ChipRow({ chip, onRecarregar }) {
                 começou {new Date(chip.aquecimento_iniciado_em).toLocaleDateString("pt-BR")}
                 {chip.proxima_acao_aquecimento && ` · próxima ação ${new Date(chip.proxima_acao_aquecimento).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}
               </div>
+              {semanaAquecimento(chip.aquecimento_iniciado_em) === 1 && (
+                <button onClick={() => iniciarAquecimento(true)} disabled={iniciando} className="block mt-1 text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.aquecendo}55`, color: C.aquecendo }}>
+                  {iniciando ? "pulando..." : "⏭ pular pra semana 2"}
+                </button>
+              )}
             </div>
           ) : (
             <div className="mb-1">
               <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.sub }}>
                 <Led color={C.pausado} /> aquecimento não iniciado
               </span>
-              <button onClick={iniciarAquecimento} disabled={iniciando} className="block mt-1 text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.ativo}55`, color: C.ativo }}>
-                {iniciando ? "iniciando..." : "▶ iniciar aquecimento"}
-              </button>
+              <div className="flex items-center gap-2 mt-1">
+                <button onClick={() => iniciarAquecimento(false)} disabled={iniciando} className="text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.ativo}55`, color: C.ativo }}>
+                  {iniciando ? "iniciando..." : "▶ iniciar aquecimento"}
+                </button>
+                <button onClick={() => iniciarAquecimento(true)} disabled={iniciando} className="text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.aquecendo}55`, color: C.aquecendo }}>
+                  {iniciando ? "iniciando..." : "⏭ já na semana 2"}
+                </button>
+              </div>
             </div>
           )}
           <StatusConexaoChip chip={chip} onRecarregar={onRecarregar} onEstadoChange={setEstadoConexao} />
