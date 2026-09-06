@@ -27,6 +27,7 @@ const C = {
 const STATUS_STYLE = {
   ativo:     { color: C.ativo,     label: "ativo" },
   aquecendo: { color: C.aquecendo, label: "aquecendo" },
+  revalidando: { color: C.aquecendo, label: "revalidando" },
   cheio:     { color: C.cheio,     label: "cheio" },
   banido:    { color: C.banido,    label: "banido" },
   pausado:   { color: C.pausado,   label: "pausado" },
@@ -1193,10 +1194,11 @@ function ChipRow({ chip, onRecarregar }) {
   const mandarProAquecimento = async () => {
     if (!chip.zap_numeros) return;
     setMandandoAquecimento(true);
-    // solta o número atual (mesmo efeito de "Deletar número" no Progresso de
-    // entrada) e reinicia o relógio do aquecimento — não mexe na idade do chip
-    await supabase.from("zap_entradas").delete().eq("numero_id", chip.zap_numero_id);
-    await supabase.from("zap_numeros").delete().eq("id", chip.zap_numero_id);
+    // mantém o número e o histórico de entradas em grupo (o mesmo chip vai
+    // reconectar depois) — só marca como "revalidando" (fora do radar dos
+    // ticks de entrada/disparo enquanto o chip reaquece) e reinicia o
+    // relógio do aquecimento, sem mexer na idade do chip
+    await supabase.from("zap_numeros").update({ status: "revalidando" }).eq("id", chip.zap_numero_id);
     await supabase.from("zap_chips").update({
       aquecimento_iniciado_em: new Date().toISOString(),
       aquecimento_concluido: false,
@@ -1256,7 +1258,7 @@ function ChipRow({ chip, onRecarregar }) {
       <td className="px-4 py-3 zap-mono" style={{ color: C.sub }}>{idadeTexto(chip.criado_em)}</td>
       <td className="px-4 py-3">
         <div>
-          {chip.zap_numeros && chip.zap_numeros.status !== "banido" ? (
+          {chip.zap_numeros && chip.zap_numeros.status !== "banido" && !chip.aquecimento_iniciado_em ? (
             <div className="mb-1">
               <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
                 <Led color={C.ativo} /> em uso ({chip.zap_numeros.instancia})
