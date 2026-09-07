@@ -1235,11 +1235,11 @@ function ChipRow({ chip, onRecarregar }) {
   if (editando) {
     return (
       <tr style={{ borderTop: `1px solid ${C.line}`, background: "rgba(255,255,255,0.02)" }}>
-        <td className="px-4 py-2.5"><input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="nome" className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-body outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
-        <td className="px-4 py-2.5"><input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="número" className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-mono outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
-        <td className="px-4 py-2.5"><input value={local} onChange={(e) => setLocal(e.target.value)} placeholder="local" className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-body outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
-        <td className="px-4 py-2.5"><input type="date" value={criadoEm} onChange={(e) => setCriadoEm(e.target.value)} className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-mono outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
-        <td className="px-4 py-2.5" colSpan={2}>
+        <td className="px-3 py-2.5"><input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="nome" className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-body outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
+        <td className="px-3 py-2.5"><input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="número" className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-mono outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
+        <td className="px-3 py-2.5"><input value={local} onChange={(e) => setLocal(e.target.value)} placeholder="local" className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-body outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
+        <td className="px-3 py-2.5"><input type="date" value={criadoEm} onChange={(e) => setCriadoEm(e.target.value)} className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-mono outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
+        <td className="px-3 py-2.5" colSpan={2}>
           <div className="flex items-center gap-2">
             <button onClick={salvar} disabled={salvando || !numero.trim()} className="px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
               {salvando ? "..." : "salvar"}
@@ -1254,34 +1254,34 @@ function ChipRow({ chip, onRecarregar }) {
 
   return (
     <tr style={{ borderTop: `1px solid ${C.line}` }}>
-      <td className="px-4 py-3 zap-body" style={{ color: C.text }}>{chip.nome || <span style={{ color: C.sub }}>—</span>}</td>
-      <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{chip.numero}</td>
-      <td className="px-4 py-3 zap-body" style={{ color: C.sub }}>{chip.local || "—"}</td>
-      <td className="px-4 py-3 zap-mono" style={{ color: C.sub }}>{idadeTexto(chip.criado_em)}</td>
-      <td className="px-4 py-3">
-        <div>
+      <td className="px-3 py-2.5 zap-body" style={{ color: C.text }}>{chip.nome || <span style={{ color: C.sub }}>—</span>}</td>
+      <td className="px-3 py-2.5 zap-mono" style={{ color: C.text }}>{chip.numero}</td>
+      <td className="px-3 py-2.5 zap-body" style={{ color: C.sub }}>{chip.local || "—"}</td>
+      <td className="px-3 py-2.5 zap-mono" style={{ color: C.sub }}>{idadeTexto(chip.criado_em)}</td>
+      <td className="px-3 py-2.5">
+        <div className="flex flex-col items-start gap-1">
           {chip.zap_numeros && chip.zap_numeros.status !== "banido" && !chip.aquecimento_iniciado_em ? (
-            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.ativo }}>
+            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
               <Led color={C.ativo} /> em uso ({chip.zap_numeros.instancia})
             </span>
           ) : chip.aquecimento_concluido ? (
-            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.ativo }}>
+            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
               <Led color={C.ativo} /> pronto — disponível pra puxar
             </span>
           ) : chip.aquecimento_iniciado_em ? (
-            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.aquecendo }}>
+            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.aquecendo }}>
               <Led color={C.aquecendo} /> aquecendo
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.sub }}>
+            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.sub }}>
               <Led color={C.pausado} /> aquecimento não iniciado
             </span>
           )}
           <StatusConexaoChip chip={chip} onRecarregar={onRecarregar} />
         </div>
       </td>
-      <td className="px-4 py-3 text-right">
-        <div className="inline-flex items-center gap-1">
+      <td className="px-3 py-2.5 text-right whitespace-nowrap">
+        <div className="inline-flex items-center gap-0.5">
           <button onClick={trocarParaAquecer} disabled={aquecendoAcao} className="p-1.5 rounded-[4px]" style={{ color: C.aquecendo }} title="trocar para aquecer">
             <Zap size={13} />
           </button>
@@ -1320,15 +1320,15 @@ function ChipsTab({ chips, loading, onRecarregar }) {
         <EmptyState titulo="Nenhum chip cadastrado" sub="Cadastre seus números aqui pra ter um inventário de reserva." />
       ) : (
         <Card>
-          <table className="w-full text-[13px]">
+          <table className="w-full text-[13px] table-fixed">
             <thead>
               <tr className="text-left zap-mono text-[10px] uppercase tracking-wide" style={{ color: C.sub }}>
-                <th className="px-4 py-3 font-normal">Nome</th>
-                <th className="px-4 py-3 font-normal">Número</th>
-                <th className="px-4 py-3 font-normal">Local</th>
-                <th className="px-4 py-3 font-normal">Idade</th>
-                <th className="px-4 py-3 font-normal">Uso</th>
-                <th className="px-4 py-3 font-normal"></th>
+                <th className="px-3 py-2.5 font-normal w-[13%]">Nome</th>
+                <th className="px-3 py-2.5 font-normal w-[13%]">Número</th>
+                <th className="px-3 py-2.5 font-normal w-[13%]">Local</th>
+                <th className="px-3 py-2.5 font-normal w-[10%]">Idade</th>
+                <th className="px-3 py-2.5 font-normal w-[38%]">Uso</th>
+                <th className="px-3 py-2.5 font-normal w-[13%]"></th>
               </tr>
             </thead>
             <tbody>
