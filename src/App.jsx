@@ -1071,13 +1071,10 @@ function NovoChipForm({ onCriado, onFechar }) {
   );
 }
 
-function StatusConexaoChip({ chip, onRecarregar, onEstadoChange }) {
+function StatusConexaoChip({ chip }) {
   const [checando, setChecando] = useState(true);
   const [estado, setEstado] = useState(null); // 'open' | outro estado | null
   const [existeNoEvolution, setExisteNoEvolution] = useState(true);
-  const [reconectando, setReconectando] = useState(false);
-  const [metodo, setMetodo] = useState("qr");
-  const [telefone, setTelefone] = useState("");
 
   // pra chip já vinculado, usa o nome real da instância no Evolution
   // (pode ser diferente do nome do chip, ex: "BR Market" vs "BR-Market");
@@ -1085,7 +1082,7 @@ function StatusConexaoChip({ chip, onRecarregar, onEstadoChange }) {
   const instancia = chip.zap_numeros?.instancia || chip.nome;
 
   const checar = async () => {
-    if (!instancia) { setChecando(false); setEstado(null); onEstadoChange?.(null); return; }
+    if (!instancia) { setChecando(false); setEstado(null); return; }
     setChecando(true);
     const { data, error } = await supabase.functions.invoke("zap-evolution", {
       body: { action: "status", instanceName: instancia },
@@ -1094,40 +1091,16 @@ function StatusConexaoChip({ chip, onRecarregar, onEstadoChange }) {
     if (error || data?.error) {
       setExisteNoEvolution(false);
       setEstado(null);
-      onEstadoChange?.(null);
       return;
     }
     setExisteNoEvolution(true);
     setEstado(data.state);
-    onEstadoChange?.(data.state);
   };
 
   useEffect(() => { checar(); }, [instancia]);
 
   if (!instancia) {
-    return <span className="text-[11px] zap-mono" style={{ color: C.sub }}>defina um nome pra poder conectar</span>;
-  }
-
-  if (reconectando) {
-    return (
-      <div className="mt-2">
-        <MetodoConexao metodo={metodo} setMetodo={setMetodo} telefone={telefone} setTelefone={setTelefone} />
-        <QrConector
-          acao={existeNoEvolution ? "reconnect" : "create"}
-          instanceName={instancia}
-          phoneNumber={metodo === "codigo" ? telefone.trim() : null}
-          onConectado={async () => {
-            if (chip.zap_numero_id) {
-              await supabase.from("zap_numeros").update({ status: "ativo" }).eq("id", chip.zap_numero_id);
-            }
-            setReconectando(false);
-            checar();
-            onRecarregar();
-          }}
-        />
-        <button onClick={() => setReconectando(false)} className="text-[11px]" style={{ color: C.sub }}>cancelar</button>
-      </div>
-    );
+    return <span className="text-[11px] zap-mono" style={{ color: C.sub }}>sem nome definido</span>;
   }
 
   if (checando) {
@@ -1143,113 +1116,25 @@ function StatusConexaoChip({ chip, onRecarregar, onEstadoChange }) {
   }
 
   // chip que nunca conectou precisa "amadurecer" 7 dias (contando a idade
-  // cadastrada) antes de poder conectar pela primeira vez. Reconexão de um
-  // chip que já existiu no Evolution antes não passa por essa trava de novo.
+  // cadastrada) antes de poder conectar pela primeira vez.
   const idadeDias = (Date.now() - new Date(chip.criado_em + "T00:00:00").getTime()) / (24 * 60 * 60 * 1000);
   const faltamDias = Math.ceil(7 - idadeDias);
   if (!existeNoEvolution && faltamDias > 0) {
     return (
       <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.sub }}>
-        <Led color={C.pausado} /> amadurecendo — faltam {faltamDias} {faltamDias === 1 ? "dia" : "dias"} pra poder conectar
+        <Led color={C.pausado} /> amadurecendo — faltam {faltamDias} {faltamDias === 1 ? "dia" : "dias"}
       </span>
     );
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.banido }}>
-        <Led color={C.banido} /> {existeNoEvolution ? "desconectado" : "não conectado"}
-      </span>
-      <button onClick={() => setReconectando(true)} className="text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.banido}55`, color: C.banido }}>
-        {existeNoEvolution ? "reconectar" : "conectar"}
-      </button>
-    </div>
+    <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.banido }}>
+      <Led color={C.banido} /> {existeNoEvolution ? "desconectado" : "não conectado"}
+    </span>
   );
 }
 
-function ChipRow({ chip, onRecarregar }) {
-  const [editando, setEditando] = useState(false);
-  const [numero, setNumero] = useState(chip.numero);
-  const [nome, setNome] = useState(chip.nome ?? "");
-  const [local, setLocal] = useState(chip.local ?? "");
-  const [criadoEm, setCriadoEm] = useState(chip.criado_em);
-  const [salvando, setSalvando] = useState(false);
-  const [erro, setErro] = useState(null);
-  const [estadoConexao, setEstadoConexao] = useState(null);
-  const [iniciando, setIniciando] = useState(false);
-
-  const iniciarAquecimento = async (pularSemana1 = false) => {
-    setIniciando(true);
-    // pular semana 1 = fingir que o aquecimento começou 7 dias atrás, então
-    // semanaAquecimento() já calcula semana 2 desde o primeiro reload
-    const inicio = pularSemana1
-      ? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000 - 60 * 1000)
-      : new Date();
-    await supabase.from("zap_chips").update({ aquecimento_iniciado_em: inicio.toISOString(), proxima_acao_aquecimento: null }).eq("id", chip.id);
-    setIniciando(false);
-    onRecarregar();
-  };
-
-  const [mandandoAquecimento, setMandandoAquecimento] = useState(false);
-  const mandarProAquecimento = async () => {
-    if (!chip.zap_numeros) return;
-    setMandandoAquecimento(true);
-    // mantém o número e o histórico de entradas em grupo (o mesmo chip vai
-    // reconectar depois) — só marca como "revalidando" (fora do radar dos
-    // ticks de entrada/disparo enquanto o chip reaquece) e reinicia o
-    // relógio do aquecimento, sem mexer na idade do chip
-    await supabase.from("zap_numeros").update({ status: "revalidando" }).eq("id", chip.zap_numero_id);
-    await supabase.from("zap_chips").update({
-      aquecimento_iniciado_em: new Date().toISOString(),
-      aquecimento_concluido: false,
-      proxima_acao_aquecimento: null,
-    }).eq("id", chip.id);
-    setMandandoAquecimento(false);
-    onRecarregar();
-  };
-
-  const salvar = async () => {
-    if (!numero.trim()) return;
-    setSalvando(true);
-    setErro(null);
-    const { error } = await supabase
-      .from("zap_chips")
-      .update({ numero: numero.trim(), nome: nome.trim() || null, local: local.trim() || null, criado_em: criadoEm })
-      .eq("id", chip.id);
-    setSalvando(false);
-    if (error) {
-      setErro(error.code === "23505" ? "esse número já está cadastrado" : error.message);
-      return;
-    }
-    setEditando(false);
-    onRecarregar();
-  };
-
-  const deletar = async () => {
-    await supabase.from("zap_chips").delete().eq("id", chip.id);
-    onRecarregar();
-  };
-
-  if (editando) {
-    return (
-      <tr style={{ borderTop: `1px solid ${C.line}`, background: "rgba(255,255,255,0.02)" }}>
-        <td className="px-4 py-2.5"><input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="nome" className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-body outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
-        <td className="px-4 py-2.5"><input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="número" className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-mono outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
-        <td className="px-4 py-2.5"><input value={local} onChange={(e) => setLocal(e.target.value)} placeholder="local" className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-body outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
-        <td className="px-4 py-2.5"><input type="date" value={criadoEm} onChange={(e) => setCriadoEm(e.target.value)} className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-mono outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
-        <td className="px-4 py-2.5" colSpan={2}>
-          <div className="flex items-center gap-2">
-            <button onClick={salvar} disabled={salvando || !numero.trim()} className="px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
-              {salvando ? "..." : "salvar"}
-            </button>
-            <button onClick={() => setEditando(false)} className="text-[11px]" style={{ color: C.sub }}>cancelar</button>
-            {erro && <span className="text-[11px]" style={{ color: C.banido }}>{erro}</span>}
-          </div>
-        </td>
-      </tr>
-    );
-  }
-
+function ChipRow({ chip }) {
   return (
     <tr style={{ borderTop: `1px solid ${C.line}` }}>
       <td className="px-4 py-3 zap-body" style={{ color: C.text }}>{chip.nome || <span style={{ color: C.sub }}>—</span>}</td>
@@ -1259,14 +1144,9 @@ function ChipRow({ chip, onRecarregar }) {
       <td className="px-4 py-3">
         <div>
           {chip.zap_numeros && chip.zap_numeros.status !== "banido" && !chip.aquecimento_iniciado_em ? (
-            <div className="mb-1">
-              <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
-                <Led color={C.ativo} /> em uso ({chip.zap_numeros.instancia})
-              </span>
-              <button onClick={mandarProAquecimento} disabled={mandandoAquecimento} className="block mt-1 text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.aquecendo}55`, color: C.aquecendo }}>
-                {mandandoAquecimento ? "enviando..." : "🔥 mandar pro aquecimento"}
-              </button>
-            </div>
+            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.ativo }}>
+              <Led color={C.ativo} /> em uso ({chip.zap_numeros.instancia})
+            </span>
           ) : chip.aquecimento_concluido ? (
             <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.ativo }}>
               <Led color={C.ativo} /> pronto — disponível pra puxar
@@ -1278,40 +1158,14 @@ function ChipRow({ chip, onRecarregar }) {
               </span>
               <div className="text-[10px] zap-body mt-0.5" style={{ color: C.sub }}>
                 começou {new Date(chip.aquecimento_iniciado_em).toLocaleDateString("pt-BR")}
-                {chip.proxima_acao_aquecimento && ` · próxima ação ${new Date(chip.proxima_acao_aquecimento).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}
               </div>
-              {semanaAquecimento(chip.aquecimento_iniciado_em) === 1 && (
-                <button onClick={() => iniciarAquecimento(true)} disabled={iniciando} className="block mt-1 text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.aquecendo}55`, color: C.aquecendo }}>
-                  {iniciando ? "pulando..." : "⏭ pular pra semana 2"}
-                </button>
-              )}
             </div>
           ) : (
-            <div className="mb-1">
-              <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.sub }}>
-                <Led color={C.pausado} /> aquecimento não iniciado
-              </span>
-              <div className="flex items-center gap-2 mt-1">
-                <button onClick={() => iniciarAquecimento(false)} disabled={iniciando} className="text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.ativo}55`, color: C.ativo }}>
-                  {iniciando ? "iniciando..." : "▶ iniciar aquecimento"}
-                </button>
-                <button onClick={() => iniciarAquecimento(true)} disabled={iniciando} className="text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.aquecendo}55`, color: C.aquecendo }}>
-                  {iniciando ? "iniciando..." : "⏭ já na semana 2"}
-                </button>
-              </div>
-            </div>
+            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.sub }}>
+              <Led color={C.pausado} /> aquecimento não iniciado
+            </span>
           )}
-          <StatusConexaoChip chip={chip} onRecarregar={onRecarregar} onEstadoChange={setEstadoConexao} />
-        </div>
-      </td>
-      <td className="px-4 py-3 text-right">
-        <div className="inline-flex items-center gap-1">
-          <button onClick={() => setEditando(true)} className="p-1.5 rounded-[4px]" style={{ color: C.sub }} title="editar chip">
-            <Pencil size={13} />
-          </button>
-          <button onClick={deletar} className="p-1.5 rounded-[4px]" style={{ color: C.sub }} title="deletar chip">
-            <Trash2 size={13} />
-          </button>
+          <StatusConexaoChip chip={chip} />
         </div>
       </td>
     </tr>
@@ -1349,7 +1203,6 @@ function ChipsTab({ chips, loading, onRecarregar }) {
                 <th className="px-4 py-3 font-normal">Local</th>
                 <th className="px-4 py-3 font-normal">Idade</th>
                 <th className="px-4 py-3 font-normal">Uso</th>
-                <th className="px-4 py-3 font-normal"></th>
               </tr>
             </thead>
             <tbody>
