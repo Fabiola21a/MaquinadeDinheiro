@@ -20,7 +20,7 @@ const FONTS = (
 
 const C = {
   bg: "#0A0C0E", panel: "#12151A", line: "rgba(255,255,255,0.07)",
-  ativo: "#35C48A", aquecendo: "#E3A83B", cheio: "#5E7A93", banido: "#E15850", pausado: "#6B7280",
+  ativo: "#35C48A", aquecendo: "#A6924F", cheio: "#5E7A93", banido: "#A85C56", pausado: "#6B7280",
   text: "#ECEEF2", sub: "#8A93A3",
 };
 
@@ -152,6 +152,26 @@ function StatusPill({ status }) {
   );
 }
 
+function ConexaoLiveBadge({ instancia }) {
+  const [estado, setEstado] = useState(null); // null = checando, 'open', ou outra coisa
+
+  useEffect(() => {
+    let vivo = true;
+    supabase.functions.invoke("zap-evolution", { body: { action: "status", instanceName: instancia } })
+      .then(({ data, error }) => {
+        if (!vivo) return;
+        setEstado(error || data?.error ? "erro" : data.state);
+      });
+    return () => { vivo = false; };
+  }, [instancia]);
+
+  if (estado === null) return <span className="text-[10px] zap-mono" style={{ color: C.sub }}>checando…</span>;
+  if (estado === "open") {
+    return <span className="inline-flex items-center gap-1 text-[10px] zap-mono uppercase" style={{ color: C.ativo }}><Led color={C.ativo} /> conectado</span>;
+  }
+  return <span className="inline-flex items-center gap-1 text-[10px] zap-mono uppercase" style={{ color: C.banido }}><Led color={C.banido} /> desconectado</span>;
+}
+
 function StatusEditor({ numero, onChanged }) {
   const [salvando, setSalvando] = useState(false);
   const mudar = async (e) => {
@@ -164,17 +184,22 @@ function StatusEditor({ numero, onChanged }) {
   };
   const cor = STATUS_STYLE[numero.status]?.color ?? C.pausado;
   return (
-    <select
-      value={numero.status}
-      onChange={mudar}
-      disabled={salvando}
-      className="zap-mono text-[11px] uppercase tracking-wide rounded-[3px] pl-1.5 pr-1 py-1 outline-none cursor-pointer"
-      style={{ color: cor, background: "transparent", border: `1px solid ${cor}55`, opacity: salvando ? 0.5 : 1 }}
-    >
-      {Object.keys(STATUS_STYLE).map((s) => (
-        <option key={s} value={s} style={{ background: C.panel, color: C.text }}>{STATUS_STYLE[s].label}</option>
-      ))}
-    </select>
+    <div>
+      <select
+        value={numero.status}
+        onChange={mudar}
+        disabled={salvando}
+        className="zap-mono text-[11px] uppercase tracking-wide rounded-[3px] pl-1.5 pr-1 py-1 outline-none cursor-pointer"
+        style={{ color: cor, background: "transparent", border: `1px solid ${cor}55`, opacity: salvando ? 0.5 : 1 }}
+      >
+        {Object.keys(STATUS_STYLE).map((s) => (
+          <option key={s} value={s} style={{ background: C.panel, color: C.text }}>{STATUS_STYLE[s].label}</option>
+        ))}
+      </select>
+      <div className="mt-1">
+        <ConexaoLiveBadge instancia={numero.instancia} />
+      </div>
+    </div>
   );
 }
 
@@ -590,11 +615,11 @@ function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
             sem número <span className="font-semibold">{semNumero.toLocaleString("pt-BR")}</span>
           </span>
           {numerosASugerir > 0 ? (
-            <span className="flex items-center gap-1.5 px-2 py-1 rounded-[3px]" style={{ color: C.banido, background: "rgba(225,88,80,0.1)" }}>
+            <span className="flex items-center gap-1.5 px-2 py-1 rounded-[3px]" style={{ color: C.banido, border: `1px solid ${C.banido}44` }}>
               <AlertTriangle size={11} /> comprar +{numerosASugerir} número{numerosASugerir > 1 ? "s" : ""}
             </span>
           ) : (
-            <span className="flex items-center gap-1.5 px-2 py-1 rounded-[3px]" style={{ color: C.ativo, background: "rgba(53,196,138,0.1)" }}>
+            <span className="flex items-center gap-1.5 px-2 py-1 rounded-[3px]" style={{ color: C.sub, border: `1px solid ${C.line}` }}>
               <CheckCircle2 size={11} /> capacidade atual cobre o resto
             </span>
           )}
