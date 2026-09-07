@@ -1071,10 +1071,13 @@ function NovoChipForm({ onCriado, onFechar }) {
   );
 }
 
-function StatusConexaoChip({ chip }) {
+function StatusConexaoChip({ chip, onRecarregar }) {
   const [checando, setChecando] = useState(true);
   const [estado, setEstado] = useState(null); // 'open' | outro estado | null
   const [existeNoEvolution, setExisteNoEvolution] = useState(true);
+  const [reconectando, setReconectando] = useState(false);
+  const [metodo, setMetodo] = useState("qr");
+  const [telefone, setTelefone] = useState("");
 
   // pra chip já vinculado, usa o nome real da instância no Evolution
   // (pode ser diferente do nome do chip, ex: "BR Market" vs "BR-Market");
@@ -1100,7 +1103,29 @@ function StatusConexaoChip({ chip }) {
   useEffect(() => { checar(); }, [instancia]);
 
   if (!instancia) {
-    return <span className="text-[11px] zap-mono" style={{ color: C.sub }}>sem nome definido</span>;
+    return <span className="text-[11px] zap-mono" style={{ color: C.sub }}>defina um nome pra poder conectar</span>;
+  }
+
+  if (reconectando) {
+    return (
+      <div className="mt-2">
+        <MetodoConexao metodo={metodo} setMetodo={setMetodo} telefone={telefone} setTelefone={setTelefone} />
+        <QrConector
+          acao={existeNoEvolution ? "reconnect" : "create"}
+          instanceName={instancia}
+          phoneNumber={metodo === "codigo" ? telefone.trim() : null}
+          onConectado={async () => {
+            if (chip.zap_numero_id) {
+              await supabase.from("zap_numeros").update({ status: "ativo" }).eq("id", chip.zap_numero_id);
+            }
+            setReconectando(false);
+            checar();
+            onRecarregar();
+          }}
+        />
+        <button onClick={() => setReconectando(false)} className="text-[11px]" style={{ color: C.sub }}>cancelar</button>
+      </div>
+    );
   }
 
   if (checando) {
@@ -1116,25 +1141,81 @@ function StatusConexaoChip({ chip }) {
   }
 
   // chip que nunca conectou precisa "amadurecer" 7 dias (contando a idade
-  // cadastrada) antes de poder conectar pela primeira vez.
+  // cadastrada) antes de poder conectar pela primeira vez. Reconexão de um
+  // chip que já existiu no Evolution antes não passa por essa trava de novo.
   const idadeDias = (Date.now() - new Date(chip.criado_em + "T00:00:00").getTime()) / (24 * 60 * 60 * 1000);
   const faltamDias = Math.ceil(7 - idadeDias);
   if (!existeNoEvolution && faltamDias > 0) {
     return (
       <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.sub }}>
-        <Led color={C.pausado} /> amadurecendo — faltam {faltamDias} {faltamDias === 1 ? "dia" : "dias"}
+        <Led color={C.pausado} /> amadurecendo — faltam {faltamDias} {faltamDias === 1 ? "dia" : "dias"} pra poder conectar
       </span>
     );
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.banido }}>
-      <Led color={C.banido} /> {existeNoEvolution ? "desconectado" : "não conectado"}
-    </span>
+    <div className="flex items-center gap-2">
+      <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.banido }}>
+        <Led color={C.banido} /> {existeNoEvolution ? "desconectado" : "não conectado"}
+      </span>
+      <button onClick={() => setReconectando(true)} className="text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.banido}55`, color: C.banido }}>
+        {existeNoEvolution ? "reconectar" : "conectar"}
+      </button>
+    </div>
   );
 }
 
-function ChipRow({ chip }) {
+function ChipRow({ chip, onRecarregar }) {
+  const [editando, setEditando] = useState(false);
+  const [numero, setNumero] = useState(chip.numero);
+  const [nome, setNome] = useState(chip.nome ?? "");
+  const [local, setLocal] = useState(chip.local ?? "");
+  const [criadoEm, setCriadoEm] = useState(chip.criado_em);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState(null);
+
+  const salvar = async () => {
+    if (!numero.trim()) return;
+    setSalvando(true);
+    setErro(null);
+    const { error } = await supabase
+      .from("zap_chips")
+      .update({ numero: numero.trim(), nome: nome.trim() || null, local: local.trim() || null, criado_em: criadoEm })
+      .eq("id", chip.id);
+    setSalvando(false);
+    if (error) {
+      setErro(error.code === "23505" ? "esse número já está cadastrado" : error.message);
+      return;
+    }
+    setEditando(false);
+    onRecarregar();
+  };
+
+  const deletar = async () => {
+    await supabase.from("zap_chips").delete().eq("id", chip.id);
+    onRecarregar();
+  };
+
+  if (editando) {
+    return (
+      <tr style={{ borderTop: `1px solid ${C.line}`, background: "rgba(255,255,255,0.02)" }}>
+        <td className="px-4 py-2.5"><input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="nome" className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-body outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
+        <td className="px-4 py-2.5"><input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="número" className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-mono outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
+        <td className="px-4 py-2.5"><input value={local} onChange={(e) => setLocal(e.target.value)} placeholder="local" className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-body outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
+        <td className="px-4 py-2.5"><input type="date" value={criadoEm} onChange={(e) => setCriadoEm(e.target.value)} className="w-full px-2 py-1.5 rounded-[4px] text-[12px] zap-mono outline-none" style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }} /></td>
+        <td className="px-4 py-2.5" colSpan={2}>
+          <div className="flex items-center gap-2">
+            <button onClick={salvar} disabled={salvando || !numero.trim()} className="px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
+              {salvando ? "..." : "salvar"}
+            </button>
+            <button onClick={() => setEditando(false)} className="text-[11px]" style={{ color: C.sub }}>cancelar</button>
+            {erro && <span className="text-[11px]" style={{ color: C.banido }}>{erro}</span>}
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
   return (
     <tr style={{ borderTop: `1px solid ${C.line}` }}>
       <td className="px-4 py-3 zap-body" style={{ color: C.text }}>{chip.nome || <span style={{ color: C.sub }}>—</span>}</td>
@@ -1165,7 +1246,17 @@ function ChipRow({ chip }) {
               <Led color={C.pausado} /> aquecimento não iniciado
             </span>
           )}
-          <StatusConexaoChip chip={chip} />
+          <StatusConexaoChip chip={chip} onRecarregar={onRecarregar} />
+        </div>
+      </td>
+      <td className="px-4 py-3 text-right">
+        <div className="inline-flex items-center gap-1">
+          <button onClick={() => setEditando(true)} className="p-1.5 rounded-[4px]" style={{ color: C.sub }} title="editar chip">
+            <Pencil size={13} />
+          </button>
+          <button onClick={deletar} className="p-1.5 rounded-[4px]" style={{ color: C.sub }} title="deletar chip">
+            <Trash2 size={13} />
+          </button>
         </div>
       </td>
     </tr>
@@ -1203,6 +1294,7 @@ function ChipsTab({ chips, loading, onRecarregar }) {
                 <th className="px-4 py-3 font-normal">Local</th>
                 <th className="px-4 py-3 font-normal">Idade</th>
                 <th className="px-4 py-3 font-normal">Uso</th>
+                <th className="px-4 py-3 font-normal"></th>
               </tr>
             </thead>
             <tbody>
