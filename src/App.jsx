@@ -20,7 +20,7 @@ const FONTS = (
 
 const C = {
   bg: "#0A0C0E", panel: "#12151A", line: "rgba(255,255,255,0.07)",
-  ativo: "#35C48A", aquecendo: "#A6924F", cheio: "#5E7A93", banido: "#A85C56", pausado: "#6B7280",
+  ativo: "#35C48A", aquecendo: "#8A93A3", cheio: "#5E7A93", banido: "#A85C56", pausado: "#6B7280",
   text: "#ECEEF2", sub: "#8A93A3",
 };
 
@@ -1198,6 +1198,7 @@ function ChipRow({ chip, onRecarregar }) {
   const [criadoEm, setCriadoEm] = useState(chip.criado_em);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
+  const [aquecendoAcao, setAquecendoAcao] = useState(false);
 
   const salvar = async () => {
     if (!numero.trim()) return;
@@ -1218,6 +1219,16 @@ function ChipRow({ chip, onRecarregar }) {
 
   const deletar = async () => {
     await supabase.from("zap_chips").delete().eq("id", chip.id);
+    onRecarregar();
+  };
+
+  const trocarParaAquecer = async () => {
+    setAquecendoAcao(true);
+    await supabase.from("zap_chips").update({
+      aquecimento_iniciado_em: new Date().toISOString(),
+      aquecimento_concluido: false,
+    }).eq("id", chip.id);
+    setAquecendoAcao(false);
     onRecarregar();
   };
 
@@ -1258,14 +1269,9 @@ function ChipRow({ chip, onRecarregar }) {
               <Led color={C.ativo} /> pronto — disponível pra puxar
             </span>
           ) : chip.aquecimento_iniciado_em ? (
-            <div className="mb-1">
-              <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.aquecendo }}>
-                <Led color={C.aquecendo} /> aquecendo — semana {semanaAquecimento(chip.aquecimento_iniciado_em)}/4
-              </span>
-              <div className="text-[10px] zap-body mt-0.5" style={{ color: C.sub }}>
-                começou {new Date(chip.aquecimento_iniciado_em).toLocaleDateString("pt-BR")}
-              </div>
-            </div>
+            <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.aquecendo }}>
+              <Led color={C.aquecendo} /> aquecendo
+            </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase mb-1" style={{ color: C.sub }}>
               <Led color={C.pausado} /> aquecimento não iniciado
@@ -1276,6 +1282,9 @@ function ChipRow({ chip, onRecarregar }) {
       </td>
       <td className="px-4 py-3 text-right">
         <div className="inline-flex items-center gap-1">
+          <button onClick={trocarParaAquecer} disabled={aquecendoAcao} className="p-1.5 rounded-[4px]" style={{ color: C.aquecendo }} title="trocar para aquecer">
+            <Zap size={13} />
+          </button>
           <button onClick={() => setEditando(true)} className="p-1.5 rounded-[4px]" style={{ color: C.sub }} title="editar chip">
             <Pencil size={13} />
           </button>
