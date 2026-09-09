@@ -1183,7 +1183,7 @@ function StatusConexaoChip({ chip, onRecarregar }) {
       <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.banido }}>
         <Led color={C.banido} /> {existeNoEvolution ? "desconectado" : "não conectado"}
       </span>
-      <button onClick={() => setReconectando(true)} className="text-[11px] px-2 py-1 rounded-[4px]" style={{ border: `1px solid ${C.banido}55`, color: C.banido }}>
+      <button onClick={() => setReconectando(true)} className="text-[11px] underline underline-offset-2" style={{ color: C.banido }}>
         {existeNoEvolution ? "reconectar" : "conectar"}
       </button>
     </div>
@@ -1270,11 +1270,11 @@ function ChipRow({ chip, onRecarregar }) {
             </span>
           ) : chip.aquecimento_iniciado_em ? (
             <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.aquecendo }}>
-              <Led color={C.aquecendo} /> aquecendo
+              <Led color={C.aquecendo} /> aquecendo · desde {new Date(chip.aquecimento_iniciado_em).toLocaleDateString("pt-BR")}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.sub }}>
-              <Led color={C.pausado} /> aquecimento não iniciado
+              <Led color={C.pausado} /> aguardando
             </span>
           )}
           <StatusConexaoChip chip={chip} onRecarregar={onRecarregar} />
@@ -1319,15 +1319,15 @@ function ChipsTab({ chips, loading, onRecarregar }) {
       ) : chips.length === 0 ? (
         <EmptyState titulo="Nenhum chip cadastrado" sub="Cadastre seus números aqui pra ter um inventário de reserva." />
       ) : (
-        <Card>
+        <Card className="max-w-[820px]">
           <table className="w-full text-[13px] table-fixed">
             <thead>
               <tr className="text-left zap-mono text-[10px] uppercase tracking-wide" style={{ color: C.sub }}>
-                <th className="px-3 py-2.5 font-normal w-[13%]">Nome</th>
-                <th className="px-3 py-2.5 font-normal w-[13%]">Número</th>
+                <th className="px-3 py-2.5 font-normal w-[15%]">Nome</th>
+                <th className="px-3 py-2.5 font-normal w-[14%]">Número</th>
                 <th className="px-3 py-2.5 font-normal w-[13%]">Local</th>
-                <th className="px-3 py-2.5 font-normal w-[10%]">Idade</th>
-                <th className="px-3 py-2.5 font-normal w-[38%]">Uso</th>
+                <th className="px-3 py-2.5 font-normal w-[9%]">Idade</th>
+                <th className="px-3 py-2.5 font-normal w-[36%]">Uso</th>
                 <th className="px-3 py-2.5 font-normal w-[13%]"></th>
               </tr>
             </thead>
