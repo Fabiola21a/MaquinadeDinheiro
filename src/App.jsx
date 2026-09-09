@@ -79,8 +79,8 @@ function useZapData() {
 
 // ---------- ui bits ----------
 
-function Led({ color, live = false }) {
-  return <span className={`inline-block h-[7px] w-[7px] rounded-full ${live ? "zap-live" : ""}`} style={{ background: color, boxShadow: `0 0 6px ${color}99` }} />;
+function Led({ color, live = false, title }) {
+  return <span title={title} className={`inline-block h-[7px] w-[7px] rounded-full ${live ? "zap-live" : ""}`} style={{ background: color, boxShadow: `0 0 6px ${color}99` }} />;
 }
 
 function EditableLimite({ numero, campo, onChanged }) {
@@ -1042,9 +1042,9 @@ function idadeTexto(criadoEm) {
   }
   if (meses <= 0 && dias === 0) return "hoje";
   const partes = [];
-  if (meses > 0) partes.push(`${meses} ${meses === 1 ? "mês" : "meses"}`);
-  partes.push(`${dias} ${dias === 1 ? "dia" : "dias"}`);
-  return partes.join(" e ");
+  if (meses > 0) partes.push(`${meses}m`);
+  partes.push(`${dias}d`);
+  return partes.join(" ");
 }
 
 function NovoChipForm({ onCriado, onFechar }) {
@@ -1127,7 +1127,7 @@ function StatusConexaoChip({ chip, onRecarregar }) {
 
   useEffect(() => { checar(); }, [instancia]);
 
-  const modalConexao = reconectando && (
+  const modal = reconectando && (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setReconectando(false)}>
       <div onClick={(e) => e.stopPropagation()} className="w-full max-w-[360px] rounded-[6px] p-5" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
         <div className="text-[13px] zap-mono mb-3" style={{ color: C.text }}>{instancia} · conectar</div>
@@ -1150,20 +1150,12 @@ function StatusConexaoChip({ chip, onRecarregar }) {
     </div>
   );
 
-  if (!instancia) {
-    return <span className="text-[11px] zap-mono" style={{ color: C.sub }}>defina um nome pra poder conectar</span>;
-  }
-
-  if (checando) {
-    return <span className="text-[11px] zap-mono" style={{ color: C.sub }}>checando...</span>;
+  if (!instancia || checando) {
+    return <Led color={C.pausado} title={!instancia ? "defina um nome pra poder conectar" : "checando..."} />;
   }
 
   if (estado === "open") {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
-        <Led color={C.ativo} /> conectado
-      </span>
-    );
+    return <Led color={C.ativo} title="conectado" />;
   }
 
   // chip que nunca conectou precisa "amadurecer" 7 dias (contando a idade
@@ -1172,23 +1164,16 @@ function StatusConexaoChip({ chip, onRecarregar }) {
   const idadeDias = (Date.now() - new Date(chip.criado_em + "T00:00:00").getTime()) / (24 * 60 * 60 * 1000);
   const faltamDias = Math.ceil(7 - idadeDias);
   if (!existeNoEvolution && faltamDias > 0) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.sub }}>
-        <Led color={C.pausado} /> amadurecendo — faltam {faltamDias} {faltamDias === 1 ? "dia" : "dias"} pra poder conectar
-      </span>
-    );
+    return <Led color={C.pausado} title={`amadurecendo — faltam ${faltamDias} ${faltamDias === 1 ? "dia" : "dias"} pra poder conectar`} />;
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.banido }}>
-        <Led color={C.banido} /> {existeNoEvolution ? "desconectado" : "não conectado"}
-      </span>
-      <button onClick={() => setReconectando(true)} className="text-[11px] underline underline-offset-2" style={{ color: C.banido }}>
-        {existeNoEvolution ? "reconectar" : "conectar"}
+    <>
+      <button onClick={() => setReconectando(true)} className="p-1.5 rounded-[4px]" title={existeNoEvolution ? "desconectado · clique pra reconectar" : "não conectado · clique pra conectar"}>
+        <Led color={C.banido} />
       </button>
-      {modalConexao}
-    </div>
+      {modal}
+    </>
   );
 }
 
@@ -1261,29 +1246,29 @@ function ChipRow({ chip, onRecarregar }) {
       <td className="px-3 py-2.5 zap-body" style={{ color: C.sub }}>{chip.local || "—"}</td>
       <td className="px-3 py-2.5 zap-mono" style={{ color: C.sub }}>{idadeTexto(chip.criado_em)}</td>
       <td className="px-3 py-2.5">
-        <div className="flex flex-col items-start gap-1">
+        <div>
           {chip.zap_numeros && chip.zap_numeros.status !== "banido" && !chip.aquecimento_iniciado_em ? (
             <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
               <Led color={C.ativo} /> em uso ({chip.zap_numeros.instancia})
             </span>
           ) : chip.aquecimento_concluido ? (
             <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
-              <Led color={C.ativo} /> pronto — disponível pra puxar
+              <Led color={C.ativo} /> pronto
             </span>
           ) : chip.aquecimento_iniciado_em ? (
             <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.aquecendo }}>
-              <Led color={C.aquecendo} /> aquecendo · desde {new Date(chip.aquecimento_iniciado_em).toLocaleDateString("pt-BR")}
+              <Led color={C.aquecendo} /> aquecendo · {new Date(chip.aquecimento_iniciado_em).toLocaleDateString("pt-BR")}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.sub }}>
               <Led color={C.pausado} /> aguardando
             </span>
           )}
-          <StatusConexaoChip chip={chip} onRecarregar={onRecarregar} />
         </div>
       </td>
       <td className="px-3 py-2.5 text-right whitespace-nowrap">
-        <div className="inline-flex items-center gap-0.5">
+        <div className="inline-flex items-center gap-2">
+          <StatusConexaoChip chip={chip} onRecarregar={onRecarregar} />
           <button onClick={trocarParaAquecer} disabled={aquecendoAcao} className="p-1.5 rounded-[4px]" style={{ color: C.aquecendo }} title="trocar para aquecer">
             <Zap size={13} />
           </button>
@@ -1321,16 +1306,16 @@ function ChipsTab({ chips, loading, onRecarregar }) {
       ) : chips.length === 0 ? (
         <EmptyState titulo="Nenhum chip cadastrado" sub="Cadastre seus números aqui pra ter um inventário de reserva." />
       ) : (
-        <Card className="max-w-[820px]">
+        <Card className="max-w-[720px]">
           <table className="w-full text-[13px] table-fixed">
             <thead>
               <tr className="text-left zap-mono text-[10px] uppercase tracking-wide" style={{ color: C.sub }}>
-                <th className="px-3 py-2.5 font-normal w-[15%]">Nome</th>
-                <th className="px-3 py-2.5 font-normal w-[14%]">Número</th>
-                <th className="px-3 py-2.5 font-normal w-[13%]">Local</th>
-                <th className="px-3 py-2.5 font-normal w-[9%]">Idade</th>
-                <th className="px-3 py-2.5 font-normal w-[36%]">Uso</th>
-                <th className="px-3 py-2.5 font-normal w-[13%]"></th>
+                <th className="px-3 py-2.5 font-normal w-[16%]">Nome</th>
+                <th className="px-3 py-2.5 font-normal w-[15%]">Número</th>
+                <th className="px-3 py-2.5 font-normal w-[14%]">Local</th>
+                <th className="px-3 py-2.5 font-normal w-[7%]">Idade</th>
+                <th className="px-3 py-2.5 font-normal w-[30%]">Uso</th>
+                <th className="px-3 py-2.5 font-normal w-[18%]"></th>
               </tr>
             </thead>
             <tbody>
