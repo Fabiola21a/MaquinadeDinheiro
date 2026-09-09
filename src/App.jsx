@@ -1127,13 +1127,10 @@ function StatusConexaoChip({ chip, onRecarregar }) {
 
   useEffect(() => { checar(); }, [instancia]);
 
-  if (!instancia) {
-    return <span className="text-[11px] zap-mono" style={{ color: C.sub }}>defina um nome pra poder conectar</span>;
-  }
-
-  if (reconectando) {
-    return (
-      <div className="mt-2">
+  const modalConexao = reconectando && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setReconectando(false)}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-[360px] rounded-[6px] p-5" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+        <div className="text-[13px] zap-mono mb-3" style={{ color: C.text }}>{instancia} · conectar</div>
         <MetodoConexao metodo={metodo} setMetodo={setMetodo} telefone={telefone} setTelefone={setTelefone} />
         <QrConector
           acao={existeNoEvolution ? "reconnect" : "create"}
@@ -1148,9 +1145,13 @@ function StatusConexaoChip({ chip, onRecarregar }) {
             onRecarregar();
           }}
         />
-        <button onClick={() => setReconectando(false)} className="text-[11px]" style={{ color: C.sub }}>cancelar</button>
+        <button onClick={() => setReconectando(false)} className="text-[11px] mt-2" style={{ color: C.sub }}>cancelar</button>
       </div>
-    );
+    </div>
+  );
+
+  if (!instancia) {
+    return <span className="text-[11px] zap-mono" style={{ color: C.sub }}>defina um nome pra poder conectar</span>;
   }
 
   if (checando) {
@@ -1186,6 +1187,7 @@ function StatusConexaoChip({ chip, onRecarregar }) {
       <button onClick={() => setReconectando(true)} className="text-[11px] underline underline-offset-2" style={{ color: C.banido }}>
         {existeNoEvolution ? "reconectar" : "conectar"}
       </button>
+      {modalConexao}
     </div>
   );
 }
