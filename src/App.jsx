@@ -1247,7 +1247,7 @@ function ChipRow({ chip, onRecarregar }) {
         <div>
           {chip.zap_numeros && chip.zap_numeros.status !== "banido" ? (
             <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
-              <Led color={C.ativo} /> em uso ({chip.zap_numeros.instancia})
+              <Led color={C.ativo} /> em uso
             </span>
           ) : chip.aquecimento_concluido ? (
             <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
