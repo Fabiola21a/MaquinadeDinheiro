@@ -899,9 +899,7 @@ function MetodoConexao({ metodo, setMetodo, telefone, setTelefone }) {
 }
 
 function PuxarNumeroForm({ chips, nichos, onCriado, onFechar }) {
-  const disponiveis = chips.filter(
-    (c) => !c.zap_numero_id && c.nome && (!c.aquecimento_iniciado_em || c.aquecimento_concluido)
-  );
+  const disponiveis = chips.filter((c) => !c.zap_numero_id && c.nome);
   const [chipId, setChipId] = useState(disponiveis[0]?.id ?? null);
   const [nichoId, setNichoId] = useState(nichos[0]?.id ?? null);
   const [salvando, setSalvando] = useState(false);
