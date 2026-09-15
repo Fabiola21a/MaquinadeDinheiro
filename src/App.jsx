@@ -1245,7 +1245,7 @@ function ChipRow({ chip, onRecarregar }) {
       <td className="px-3 py-2.5 zap-mono" style={{ color: C.sub }}>{idadeTexto(chip.criado_em)}</td>
       <td className="px-3 py-2.5">
         <div>
-          {chip.zap_numeros && chip.zap_numeros.status !== "banido" && !chip.aquecimento_iniciado_em ? (
+          {chip.zap_numeros && chip.zap_numeros.status !== "banido" ? (
             <span className="inline-flex items-center gap-1.5 text-[11px] zap-mono uppercase" style={{ color: C.ativo }}>
               <Led color={C.ativo} /> em uso ({chip.zap_numeros.instancia})
             </span>
