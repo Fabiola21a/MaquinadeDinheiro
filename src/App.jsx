@@ -899,11 +899,35 @@ function MetodoConexao({ metodo, setMetodo, telefone, setTelefone }) {
 }
 
 function PuxarNumeroForm({ chips, nichos, onCriado, onFechar }) {
-  const disponiveis = chips.filter((c) => !c.zap_numero_id && c.nome);
-  const [chipId, setChipId] = useState(disponiveis[0]?.id ?? null);
+  const candidatos = chips.filter((c) => !c.zap_numero_id && c.nome);
+  const [checando, setChecando] = useState(true);
+  const [disponiveis, setDisponiveis] = useState([]);
+  const [chipId, setChipId] = useState(null);
   const [nichoId, setNichoId] = useState(nichos[0]?.id ?? null);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      setChecando(true);
+      const resultados = await Promise.all(
+        candidatos.map(async (c) => {
+          const { data, error } = await supabase.functions.invoke("zap-evolution", {
+            body: { action: "status", instanceName: c.nome },
+          });
+          const conectado = !error && !data?.error && data?.state === "open";
+          return conectado ? c : null;
+        })
+      );
+      if (!vivo) return;
+      const abertos = resultados.filter(Boolean);
+      setDisponiveis(abertos);
+      setChipId(abertos[0]?.id ?? null);
+      setChecando(false);
+    })();
+    return () => { vivo = false; };
+  }, [chips.map((c) => c.id).join(",")]);
 
   const puxar = async () => {
     const chip = disponiveis.find((c) => c.id === chipId);
@@ -930,12 +954,20 @@ function PuxarNumeroForm({ chips, nichos, onCriado, onFechar }) {
     onFechar();
   };
 
+  if (checando) {
+    return (
+      <Card className="p-4 mb-4">
+        <div className="text-[12px]" style={{ color: C.sub }}>Checando quais chips estão conectados...</div>
+      </Card>
+    );
+  }
+
   if (disponiveis.length === 0) {
     return (
       <Card className="p-4 mb-4">
         <div className="text-[12px]" style={{ color: C.sub }}>
-          Nenhum chip disponível pra puxar — todos já estão em uso, ou você ainda não cadastrou/conectou nenhum.
-          Vá em <span style={{ color: C.text }}>Cadastro de números</span> pra criar e conectar um novo chip primeiro.
+          Nenhum chip conectado disponível pra puxar — todos já estão em uso, desconectados, ou você ainda não cadastrou nenhum.
+          Vá em <span style={{ color: C.text }}>Cadastro de números</span> pra conectar um chip primeiro.
         </div>
         <button onClick={onFechar} className="text-[12px] mt-2" style={{ color: C.sub }}>fechar</button>
       </Card>
