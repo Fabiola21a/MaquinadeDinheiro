@@ -1203,7 +1203,7 @@ function StatusConexaoChip({ chip, onRecarregar }) {
     <button
       onClick={verificarAgora}
       disabled={verificando || !instancia}
-      className="p-1.5 rounded-[4px]"
+      className="p-1.5 rounded-[4px] shrink-0"
       style={{ color: ultimaVerificacao === "atualizado" ? C.ativo : C.sub, opacity: verificando ? 0.5 : 1 }}
       title={
         ultimaVerificacao === "atualizado"
@@ -1213,7 +1213,7 @@ function StatusConexaoChip({ chip, onRecarregar }) {
           : "verificar conexão agora"
       }
     >
-      <RefreshCw size={12} className={verificando ? "zap-spin" : ""} />
+      <RefreshCw size={13} className={verificando ? "zap-spin" : ""} />
     </button>
   );
 
