@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Upload, Smartphone, Activity, Radio, RotateCcw,
-  Play, Pause, AlertTriangle, ChevronRight, ChevronDown, Plus, CheckCircle2, Loader2, Contact, Trash2, Pencil, Zap
+  Play, Pause, AlertTriangle, ChevronRight, ChevronDown, Plus, CheckCircle2, Loader2, Contact, Trash2, Pencil, Zap, RefreshCw
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 
@@ -1133,6 +1133,8 @@ function StatusConexaoChip({ chip, onRecarregar }) {
   const [reconectando, setReconectando] = useState(false);
   const [metodo, setMetodo] = useState("qr");
   const [telefone, setTelefone] = useState("");
+  const [verificando, setVerificando] = useState(false);
+  const [ultimaVerificacao, setUltimaVerificacao] = useState(null); // 'atualizado' | 'sem_mudanca' | null
 
   // pra chip já vinculado, usa o nome real da instância no Evolution
   // (pode ser diferente do nome do chip, ex: "BR Market" vs "BR-Market");
@@ -1156,6 +1158,64 @@ function StatusConexaoChip({ chip, onRecarregar }) {
   };
 
   useEffect(() => { checar(); }, [instancia]);
+
+  // botão manual: re-checa o Evolution agora e sincroniza o status do
+  // número no Supabase (ativo se conectou, revalidando se não), pra você
+  // ver se uma conexão feita direto no Evolution já refletiu no sistema.
+  const verificarAgora = async () => {
+    if (!instancia) return;
+    setVerificando(true);
+    setUltimaVerificacao(null);
+    const { data, error } = await supabase.functions.invoke("zap-evolution", {
+      body: { action: "status", instanceName: instancia },
+    });
+    if (error || data?.error) {
+      setExisteNoEvolution(false);
+      setEstado(null);
+      setVerificando(false);
+      setUltimaVerificacao("sem_mudanca");
+      return;
+    }
+    setExisteNoEvolution(true);
+    const novoEstado = data.state;
+    setEstado(novoEstado);
+
+    if (chip.zap_numero_id) {
+      const statusAtual = chip.zap_numeros?.status;
+      if (novoEstado === "open" && statusAtual !== "ativo") {
+        await supabase.from("zap_numeros").update({ status: "ativo" }).eq("id", chip.zap_numero_id);
+        setUltimaVerificacao("atualizado");
+      } else if (novoEstado !== "open" && statusAtual === "ativo") {
+        await supabase.from("zap_numeros").update({ status: "revalidando" }).eq("id", chip.zap_numero_id);
+        setUltimaVerificacao("atualizado");
+      } else {
+        setUltimaVerificacao("sem_mudanca");
+      }
+    } else {
+      setUltimaVerificacao("sem_mudanca");
+    }
+
+    setVerificando(false);
+    onRecarregar();
+  };
+
+  const botaoVerificar = (
+    <button
+      onClick={verificarAgora}
+      disabled={verificando || !instancia}
+      className="p-1.5 rounded-[4px]"
+      style={{ color: ultimaVerificacao === "atualizado" ? C.ativo : C.sub, opacity: verificando ? 0.5 : 1 }}
+      title={
+        ultimaVerificacao === "atualizado"
+          ? "conexão atualizada"
+          : ultimaVerificacao === "sem_mudanca"
+          ? "verificado — sem mudança"
+          : "verificar conexão agora"
+      }
+    >
+      <RefreshCw size={12} className={verificando ? "zap-spin" : ""} />
+    </button>
+  );
 
   const modal = reconectando && (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setReconectando(false)}>
@@ -1181,11 +1241,21 @@ function StatusConexaoChip({ chip, onRecarregar }) {
   );
 
   if (!instancia || checando) {
-    return <Led color={C.pausado} title={!instancia ? "defina um nome pra poder conectar" : "checando..."} />;
+    return (
+      <span className="inline-flex items-center gap-1">
+        <Led color={C.pausado} title={!instancia ? "defina um nome pra poder conectar" : "checando..."} />
+        {instancia && botaoVerificar}
+      </span>
+    );
   }
 
   if (estado === "open") {
-    return <Led color={C.ativo} title="conectado" />;
+    return (
+      <span className="inline-flex items-center gap-1">
+        <Led color={C.ativo} title="conectado" />
+        {botaoVerificar}
+      </span>
+    );
   }
 
   // chip que nunca conectou precisa "amadurecer" 7 dias (contando a idade
@@ -1194,14 +1264,22 @@ function StatusConexaoChip({ chip, onRecarregar }) {
   const idadeDias = (Date.now() - new Date(chip.criado_em + "T00:00:00").getTime()) / (24 * 60 * 60 * 1000);
   const faltamDias = Math.ceil(7 - idadeDias);
   if (!existeNoEvolution && faltamDias > 0) {
-    return <Led color={C.pausado} title={`amadurecendo — faltam ${faltamDias} ${faltamDias === 1 ? "dia" : "dias"} pra poder conectar`} />;
+    return (
+      <span className="inline-flex items-center gap-1">
+        <Led color={C.pausado} title={`amadurecendo — faltam ${faltamDias} ${faltamDias === 1 ? "dia" : "dias"} pra poder conectar`} />
+        {botaoVerificar}
+      </span>
+    );
   }
 
   return (
     <>
-      <button onClick={() => setReconectando(true)} className="p-1.5 rounded-[4px]" title={existeNoEvolution ? "desconectado · clique pra reconectar" : "não conectado · clique pra conectar"}>
-        <Led color={C.banido} />
-      </button>
+      <span className="inline-flex items-center gap-1">
+        <button onClick={() => setReconectando(true)} className="p-1.5 rounded-[4px]" title={existeNoEvolution ? "desconectado · clique pra reconectar" : "não conectado · clique pra conectar"}>
+          <Led color={C.banido} />
+        </button>
+        {botaoVerificar}
+      </span>
       {modal}
     </>
   );
