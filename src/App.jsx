@@ -1879,6 +1879,7 @@ function VersoesAnuncio({ execucaoId, onSalvou }) {
 
 function situacaoNumeroDisparo(estado) {
   if (!estado) return { label: "ainda não iniciou", cor: C.sub };
+  if (estado.pausado) return { label: "pausado (não envia)", cor: C.pausado };
   if (estado.ciclo_completo) return { label: "terminou o ciclo — aguardando reinício", cor: C.aquecendo };
   if (!estado.proxima_acao) return { label: "pronto pra próxima mensagem", cor: C.ativo };
   const faltaMs = new Date(estado.proxima_acao).getTime() - Date.now();
@@ -1962,10 +1963,25 @@ function DetalhesPorNumero({ execucaoId, nichoId }) {
           .eq("execucao_id", execucaoId)
           .eq("numero_id", n.id)
           .eq("status", "enviado");
-        return { numero: n, estado: porNumero[n.id], enviados: count ?? 0 };
+        const { count: total } = await supabase
+          .from("zap_entradas")
+          .select("id", { count: "exact", head: true })
+          .eq("numero_id", n.id)
+          .eq("status", "entrou");
+        return { numero: n, estado: porNumero[n.id], enviados: count ?? 0, total: total ?? 0 };
       })
     );
     setLinhas(combinado);
+  };
+
+  const alternarPausa = async (numeroId, estado) => {
+    const novo = !(estado?.pausado ?? false);
+    if (estado) {
+      await supabase.from("zap_disparo_estado").update({ pausado: novo }).eq("id", estado.id);
+    } else {
+      await supabase.from("zap_disparo_estado").insert({ execucao_id: execucaoId, numero_id: numeroId, tamanho_lote: 10, pausado: novo });
+    }
+    carregar();
   };
 
   useEffect(() => {
@@ -1979,7 +1995,7 @@ function DetalhesPorNumero({ execucaoId, nichoId }) {
 
   return (
     <div className="pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
-      {linhas.map(({ numero, estado, enviados }) => {
+      {linhas.map(({ numero, estado, enviados, total }) => {
         const sit = situacaoNumeroDisparo(estado);
         return (
           <div key={numero.id}>
@@ -1990,7 +2006,10 @@ function DetalhesPorNumero({ execucaoId, nichoId }) {
                 <span className="text-[11px] zap-body" style={{ color: C.sub }}>{sit.label}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[11px] zap-mono" style={{ color: C.sub }}>{enviados} enviados</span>
+                <span className="text-[11px] zap-mono" style={{ color: C.sub }}>{enviados}/{total} enviados</span>
+                <button onClick={() => alternarPausa(numero.id, estado)} className="text-[11px]" style={{ color: estado?.pausado ? C.ativo : C.pausado }}>
+                  {estado?.pausado ? "retomar" : "pausar"}
+                </button>
                 <button onClick={() => setHistoricoAberto(historicoAberto === numero.id ? null : numero.id)} className="text-[11px]" style={{ color: C.ativo }}>
                   histórico
                 </button>
