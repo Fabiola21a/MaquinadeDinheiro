@@ -534,11 +534,18 @@ function LogsNumeroButton({ numero }) {
       supabase.from("zap_rate_limit_log").select("id, grupo_id, created_at").eq("numero_id", numero.id).order("created_at", { ascending: false }).limit(30),
     ]);
 
+    const idsG = [...new Set([...(entradas.data ?? []), ...(bloqueios.data ?? [])].map((x) => x.grupo_id))];
+    let nomesG = {};
+    if (idsG.length) {
+      const { data: gs } = await supabase.from("zap_grupos").select("id, nome").in("id", idsG);
+      nomesG = Object.fromEntries((gs ?? []).map((g) => [g.id, g.nome]));
+    }
     const combinado = [
       ...(entradas.data ?? []).map((e) => ({
         id: `e${e.id}`,
         quando: e.data_entrada ?? e.created_at,
         grupo: e.grupo_id,
+        nome: nomesG[e.grupo_id],
         tipo: e.status === "entrou" ? "entrou" : "erro",
         cor: e.status === "entrou" ? C.ativo : C.banido,
       })),
@@ -546,6 +553,7 @@ function LogsNumeroButton({ numero }) {
         id: `b${b.id}`,
         quando: b.created_at,
         grupo: b.grupo_id,
+        nome: nomesG[b.grupo_id],
         tipo: "bloqueio (rate-overlimit)",
         cor: C.banido,
       })),
@@ -575,7 +583,7 @@ function LogsNumeroButton({ numero }) {
               <div className="flex flex-col gap-1 max-h-[420px] overflow-y-auto">
                 {linhas.map((l) => (
                   <div key={l.id} className="flex items-center justify-between text-[11px] zap-mono py-0.5">
-                    <span style={{ color: l.cor }}>grupo #{l.grupo} · {l.tipo}</span>
+                    <span className="truncate" style={{ color: l.cor }}>{l.nome || `grupo #${l.grupo}`} · {l.tipo}</span>
                     <span style={{ color: C.sub }} className="shrink-0 ml-3">{horaBrasilia(l.quando)}</span>
                   </div>
                 ))}
@@ -1891,7 +1899,16 @@ function HistoricoNumero({ execucaoId, numeroId, onFechar }) {
       .eq("numero_id", numeroId)
       .order("created_at", { ascending: false })
       .limit(10)
-      .then(({ data }) => setLinhas(data ?? []));
+      .then(async ({ data }) => {
+        const rows = data ?? [];
+        const ids = [...new Set(rows.map((r) => r.grupo_id))];
+        let nomes = {};
+        if (ids.length) {
+          const { data: gs } = await supabase.from("zap_grupos").select("id, nome").in("id", ids);
+          nomes = Object.fromEntries((gs ?? []).map((g) => [g.id, g.nome]));
+        }
+        setLinhas(rows.map((r) => ({ ...r, grupo_nome: nomes[r.grupo_id] })));
+      });
   }, [execucaoId, numeroId]);
 
   return (
@@ -1908,7 +1925,7 @@ function HistoricoNumero({ execucaoId, numeroId, onFechar }) {
         <div className="flex flex-col gap-1">
           {linhas.map((l) => (
             <div key={l.id} className="flex items-center justify-between text-[11px] zap-mono">
-              <span style={{ color: l.status === "enviado" ? C.ativo : C.banido }}>grupo #{l.grupo_id} · {l.status}</span>
+              <span className="truncate" style={{ color: l.status === "enviado" ? C.ativo : C.banido }}>{l.grupo_nome || `grupo #${l.grupo_id}`} · {l.status}</span>
               <span style={{ color: C.sub }}>{tempoRelativo(l.created_at)}</span>
             </div>
           ))}
