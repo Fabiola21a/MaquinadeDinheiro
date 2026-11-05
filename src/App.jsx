@@ -1730,38 +1730,76 @@ function OperacaoTab({ nichos }) {
 function VersoesAnuncio({ execucaoId, onSalvou }) {
   const [versoes, setVersoes] = useState(null);
   const [editados, setEditados] = useState({}); // variante_id -> texto novo
-  const [salvandoId, setSalvandoId] = useState(null);
+  const [novas, setNovas] = useState([]); // textos de versões ainda não salvas
+  const [ocupado, setOcupado] = useState(null);
   const [erro, setErro] = useState(null);
 
-  useEffect(() => {
-    supabase
+  const recarregar = async () => {
+    const { data } = await supabase
       .from("zap_disparo_variantes")
       .select("id, texto")
       .eq("execucao_id", execucaoId)
-      .order("id")
-      .then(({ data }) => setVersoes(data ?? []));
-  }, [execucaoId]);
+      .order("id");
+    setVersoes(data ?? []);
+  };
+
+  useEffect(() => { recarregar(); }, [execucaoId]);
 
   const salvar = async (v) => {
     const novo = (editados[v.id] ?? "").trim();
     if (!novo) return;
-    setSalvandoId(v.id);
+    setOcupado(`v${v.id}`);
     setErro(null);
     const { error } = await supabase.from("zap_disparo_variantes").update({ texto: novo }).eq("id", v.id);
-    setSalvandoId(null);
+    setOcupado(null);
     if (error) { setErro(error.message); return; }
-    setVersoes((lista) => lista.map((x) => (x.id === v.id ? { ...x, texto: novo } : x)));
     setEditados((e) => { const { [v.id]: _, ...resto } = e; return resto; });
+    await recarregar();
+    onSalvou();
+  };
+
+  const apagar = async (v) => {
+    if (versoes.length <= 1) return;
+    if (!window.confirm("Apagar essa versão?")) return;
+    setOcupado(`v${v.id}`);
+    setErro(null);
+    const { error } = await supabase.from("zap_disparo_variantes").delete().eq("id", v.id);
+    setOcupado(null);
+    if (error) { setErro(error.message); return; }
+    setEditados((e) => { const { [v.id]: _, ...resto } = e; return resto; });
+    await recarregar();
+    onSalvou();
+  };
+
+  const adicionar = async (i) => {
+    const texto = (novas[i] ?? "").trim();
+    if (!texto) return;
+    setOcupado(`n${i}`);
+    setErro(null);
+    const { error } = await supabase.from("zap_disparo_variantes").insert({ execucao_id: execucaoId, texto });
+    setOcupado(null);
+    if (error) { setErro(error.message); return; }
+    setNovas((n) => n.filter((_, idx) => idx !== i));
+    await recarregar();
     onSalvou();
   };
 
   if (versoes === null) return <div className="mb-2"><Spinner /></div>;
-  if (versoes.length === 0) return <div className="text-[11px] zap-body mb-2" style={{ color: C.sub }}>Nenhuma versão cadastrada.</div>;
+
+  const estiloCampo = (destaque) => ({
+    background: "rgba(0,0,0,0.3)",
+    border: `1px solid ${destaque ? C.ativo : C.line}`,
+    color: C.text,
+  });
 
   return (
     <div className="flex flex-col gap-2 mb-3">
+      {versoes.length === 0 && (
+        <div className="text-[11px] zap-body" style={{ color: C.sub }}>Nenhuma versão cadastrada.</div>
+      )}
       {versoes.map((v, i) => {
         const mudou = editados[v.id] !== undefined && editados[v.id] !== v.texto;
+        const ultima = versoes.length <= 1;
         return (
           <div key={v.id} className="flex items-start gap-2">
             <span className="text-[11px] zap-mono mt-2.5" style={{ color: C.sub }}>{i + 1}.</span>
@@ -1769,21 +1807,63 @@ function VersoesAnuncio({ execucaoId, onSalvou }) {
               value={editados[v.id] ?? v.texto}
               onChange={(e) => setEditados((ed) => ({ ...ed, [v.id]: e.target.value }))}
               className="flex-1 h-20 rounded-[4px] px-3 py-2 text-[12px] zap-body outline-none resize-none"
-              style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${mudou ? C.ativo : C.line}`, color: C.text }}
+              style={estiloCampo(mudou)}
             />
             {mudou && (
               <button
                 onClick={() => salvar(v)}
-                disabled={salvandoId === v.id || !editados[v.id].trim()}
+                disabled={ocupado === `v${v.id}` || !editados[v.id].trim()}
                 className="px-2.5 py-1.5 mt-1 text-[11px] rounded-[4px] zap-body"
-                style={{ background: C.ativo, color: "#06110B", opacity: salvandoId === v.id ? 0.6 : 1 }}
+                style={{ background: C.ativo, color: "#06110B", opacity: ocupado === `v${v.id}` ? 0.6 : 1 }}
               >
-                {salvandoId === v.id ? "salvando..." : "salvar"}
+                {ocupado === `v${v.id}` ? "salvando..." : "salvar"}
               </button>
             )}
+            <button
+              onClick={() => apagar(v)}
+              disabled={ultima || ocupado === `v${v.id}`}
+              title={ultima ? "o anúncio precisa de pelo menos 1 versão" : "apagar essa versão"}
+              className="p-2 mt-1"
+              style={{ color: C.sub, opacity: ultima ? 0.3 : 1 }}
+            >
+              <Trash2 size={13} />
+            </button>
           </div>
         );
       })}
+
+      {novas.map((texto, i) => (
+        <div key={`nova-${i}`} className="flex items-start gap-2">
+          <span className="text-[11px] zap-mono mt-2.5" style={{ color: C.ativo }}>+</span>
+          <textarea
+            value={texto}
+            onChange={(e) => setNovas((n) => n.map((x, idx) => (idx === i ? e.target.value : x)))}
+            placeholder="Texto da nova versão..."
+            className="flex-1 h-20 rounded-[4px] px-3 py-2 text-[12px] zap-body outline-none resize-none"
+            style={estiloCampo(true)}
+          />
+          <button
+            onClick={() => adicionar(i)}
+            disabled={ocupado === `n${i}` || !texto.trim()}
+            className="px-2.5 py-1.5 mt-1 text-[11px] rounded-[4px] zap-body"
+            style={{ background: C.ativo, color: "#06110B", opacity: ocupado === `n${i}` || !texto.trim() ? 0.5 : 1 }}
+          >
+            {ocupado === `n${i}` ? "salvando..." : "adicionar"}
+          </button>
+          <button
+            onClick={() => setNovas((n) => n.filter((_, idx) => idx !== i))}
+            className="p-2 mt-1 text-[11px]"
+            style={{ color: C.sub }}
+            title="cancelar"
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+
+      <button onClick={() => setNovas((n) => [...n, ""])} className="flex items-center gap-1 text-[12px] self-start" style={{ color: C.ativo }}>
+        <Plus size={12} /> adicionar versão
+      </button>
       {erro && <div className="text-[11px]" style={{ color: C.banido }}>{erro}</div>}
     </div>
   );
