@@ -1496,6 +1496,8 @@ function OperacaoTab({ nichos }) {
   const [loading, setLoading] = useState(true);
   const [criando, setCriando] = useState(false);
   const [nichoId, setNichoId] = useState(nichos[0]?.id ?? null);
+  const [titulo, setTitulo] = useState("");
+  const [abertos, setAbertos] = useState({}); // execucao_id -> versões visíveis
   const [variantes, setVariantes] = useState([""]);
   const [imagemUrl, setImagemUrl] = useState("");
   const [salvando, setSalvando] = useState(false);
@@ -1541,10 +1543,11 @@ function OperacaoTab({ nichos }) {
 
   const iniciar = async () => {
     const textos = variantes.map((v) => v.trim()).filter(Boolean);
-    if (!nichoId || textos.length === 0) return;
+    if (!nichoId || textos.length === 0 || !titulo.trim()) return;
     setSalvando(true);
     setErro(null);
     const { data: exec, error } = await supabase.from("zap_disparo_execucoes").insert({
+      titulo: titulo.trim(),
       nicho_id: nichoId,
       mensagem: textos[0],
       imagem_url: imagemUrl.trim() || null,
@@ -1561,6 +1564,7 @@ function OperacaoTab({ nichos }) {
     );
     setSalvando(false);
     if (e2) { setErro(e2.message); return; }
+    setTitulo("");
     setVariantes([""]);
     setImagemUrl("");
     setCriando(false);
@@ -1613,6 +1617,15 @@ function OperacaoTab({ nichos }) {
 
       {criando && (
         <Card className="p-5 mb-4">
+          <div className="text-[12px] zap-body mb-2" style={{ color: C.sub }}>Título do anúncio</div>
+          <input
+            value={titulo}
+            onChange={(e) => setTitulo(e.target.value)}
+            placeholder="ex: Kit 3.700 grupos EUA"
+            className="w-full rounded-[4px] px-3 py-2 text-[13px] zap-body outline-none mb-4"
+            style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
+          />
+
           <div className="text-[12px] zap-body mb-2" style={{ color: C.sub }}>Nicho deste anúncio</div>
           <div className="flex gap-2 flex-wrap mb-4">
             {nichos.map((n) => (
@@ -1650,7 +1663,7 @@ function OperacaoTab({ nichos }) {
           <UploadImagem imagemUrl={imagemUrl} setImagemUrl={setImagemUrl} />
 
           <div className="flex items-center gap-2 mt-4">
-            <button onClick={iniciar} disabled={salvando || !nichoId || variantes.every((v) => !v.trim())} className="px-4 py-2 text-[13px] rounded-[4px] font-medium zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
+            <button onClick={iniciar} disabled={salvando || !nichoId || !titulo.trim() || variantes.every((v) => !v.trim())} className="px-4 py-2 text-[13px] rounded-[4px] font-medium zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
               {salvando ? "iniciando..." : "Iniciar disparo contínuo"}
             </button>
             <button onClick={() => setCriando(false)} className="text-[12px]" style={{ color: C.sub }}>cancelar</button>
@@ -1683,7 +1696,17 @@ function OperacaoTab({ nichos }) {
                   </button>
                 </div>
               </div>
-              <div className="text-[12px] zap-body mb-2" style={{ color: C.sub }}>{exec.mensagem}</div>
+              <div className="text-[14px] zap-body font-medium mb-1" style={{ color: C.text }}>
+                {exec.titulo || (exec.mensagem.length > 40 ? exec.mensagem.slice(0, 40) + "…" : exec.mensagem)}
+              </div>
+              <button
+                onClick={() => setAbertos((a) => ({ ...a, [exec.id]: !a[exec.id] }))}
+                className="text-[11px] zap-mono mb-2"
+                style={{ color: C.ativo }}
+              >
+                {abertos[exec.id] ? "ocultar versões" : "ver versões"}
+              </button>
+              {abertos[exec.id] && <VersoesAnuncio execucaoId={exec.id} onSalvou={carregar} />}
               <div className="flex items-center gap-4 text-[11px] zap-mono mb-2" style={{ color: C.sub }}>
                 <span>enviados <span style={{ color: C.text }}>{exec.total_enviados ?? 0}</span></span>
                 <span>erros <span style={{ color: C.text }}>{exec.total_erros ?? 0}</span></span>
@@ -1700,6 +1723,68 @@ function OperacaoTab({ nichos }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function VersoesAnuncio({ execucaoId, onSalvou }) {
+  const [versoes, setVersoes] = useState(null);
+  const [editados, setEditados] = useState({}); // variante_id -> texto novo
+  const [salvandoId, setSalvandoId] = useState(null);
+  const [erro, setErro] = useState(null);
+
+  useEffect(() => {
+    supabase
+      .from("zap_disparo_variantes")
+      .select("id, texto")
+      .eq("execucao_id", execucaoId)
+      .order("id")
+      .then(({ data }) => setVersoes(data ?? []));
+  }, [execucaoId]);
+
+  const salvar = async (v) => {
+    const novo = (editados[v.id] ?? "").trim();
+    if (!novo) return;
+    setSalvandoId(v.id);
+    setErro(null);
+    const { error } = await supabase.from("zap_disparo_variantes").update({ texto: novo }).eq("id", v.id);
+    setSalvandoId(null);
+    if (error) { setErro(error.message); return; }
+    setVersoes((lista) => lista.map((x) => (x.id === v.id ? { ...x, texto: novo } : x)));
+    setEditados((e) => { const { [v.id]: _, ...resto } = e; return resto; });
+    onSalvou();
+  };
+
+  if (versoes === null) return <div className="mb-2"><Spinner /></div>;
+  if (versoes.length === 0) return <div className="text-[11px] zap-body mb-2" style={{ color: C.sub }}>Nenhuma versão cadastrada.</div>;
+
+  return (
+    <div className="flex flex-col gap-2 mb-3">
+      {versoes.map((v, i) => {
+        const mudou = editados[v.id] !== undefined && editados[v.id] !== v.texto;
+        return (
+          <div key={v.id} className="flex items-start gap-2">
+            <span className="text-[11px] zap-mono mt-2.5" style={{ color: C.sub }}>{i + 1}.</span>
+            <textarea
+              value={editados[v.id] ?? v.texto}
+              onChange={(e) => setEditados((ed) => ({ ...ed, [v.id]: e.target.value }))}
+              className="flex-1 h-20 rounded-[4px] px-3 py-2 text-[12px] zap-body outline-none resize-none"
+              style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${mudou ? C.ativo : C.line}`, color: C.text }}
+            />
+            {mudou && (
+              <button
+                onClick={() => salvar(v)}
+                disabled={salvandoId === v.id || !editados[v.id].trim()}
+                className="px-2.5 py-1.5 mt-1 text-[11px] rounded-[4px] zap-body"
+                style={{ background: C.ativo, color: "#06110B", opacity: salvandoId === v.id ? 0.6 : 1 }}
+              >
+                {salvandoId === v.id ? "salvando..." : "salvar"}
+              </button>
+            )}
+          </div>
+        );
+      })}
+      {erro && <div className="text-[11px]" style={{ color: C.banido }}>{erro}</div>}
     </div>
   );
 }
