@@ -739,7 +739,7 @@ function RecuperarNumeroForm({ numeroPerdido, onFeito, onFechar }) {
         .from("zap_entradas")
         .select("grupo_id")
         .eq("numero_id", numeroPerdido.id)
-        .eq("status", "entrou");
+        .in("status", ["entrou", "aguardando_aprovacao"]);
       if (e2) throw e2;
 
       if (gruposDoPerdido.length > 0) {
@@ -2000,7 +2000,7 @@ function DetalhesPorNumero({ execucaoId, nichoId }) {
           .from("zap_entradas")
           .select("id", { count: "exact", head: true })
           .eq("numero_id", n.id)
-          .eq("status", "entrou");
+          .in("status", ["entrou", "aguardando_aprovacao"]);
         return { numero: n, estado: porNumero[n.id], enviados: count ?? 0, total: total ?? 0 };
       })
     );
