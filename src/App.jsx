@@ -272,7 +272,7 @@ function CoverageStrip({ numeros, cobertura, loading }) {
           )}
           {!loading && descartadosTotal > 0 && (
             <div className="text-[11px] zap-body mt-1.5" style={{ color: C.sub }}>
-              {descartadosTotal.toLocaleString("pt-BR")} descartados de {cadastradosTotal.toLocaleString("pt-BR")} cadastrados (cheios, fechados, com aprovação de admin ou com erro)
+              {descartadosTotal.toLocaleString("pt-BR")} descartados de {cadastradosTotal.toLocaleString("pt-BR")} cadastrados (cheios, fechados ou com erro)
             </div>
           )}
         </div>
