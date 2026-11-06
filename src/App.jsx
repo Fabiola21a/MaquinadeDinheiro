@@ -253,6 +253,8 @@ function EmptyState({ titulo, sub }) {
 function CoverageStrip({ numeros, cobertura, loading }) {
   const total = numeros.reduce((a, n) => a + n.entrou, 0);
   const catalogoTotal = cobertura.reduce((a, c) => a + c.total_grupos, 0);
+  const descartadosTotal = cobertura.reduce((a, c) => a + (c.grupos_descartados ?? 0), 0);
+  const cadastradosTotal = cobertura.reduce((a, c) => a + (c.total_cadastrados ?? c.total_grupos), 0);
   const pct = catalogoTotal > 0 ? total / catalogoTotal : 0;
   const ticks = 25;
   return (
@@ -265,7 +267,12 @@ function CoverageStrip({ numeros, cobertura, loading }) {
           ) : (
             <div className="flex items-baseline gap-2">
               <span className="zap-display text-[32px] leading-none font-semibold zap-mono tabular-nums" style={{ color: C.text }}>{total.toLocaleString("pt-BR")}</span>
-              <span className="text-[15px] zap-mono" style={{ color: C.sub }}>/ {catalogoTotal.toLocaleString("pt-BR")} grupos</span>
+              <span className="text-[15px] zap-mono" style={{ color: C.sub }}>/ {catalogoTotal.toLocaleString("pt-BR")} grupos aproveitáveis</span>
+            </div>
+          )}
+          {!loading && descartadosTotal > 0 && (
+            <div className="text-[11px] zap-body mt-1.5" style={{ color: C.sub }}>
+              {descartadosTotal.toLocaleString("pt-BR")} descartados de {cadastradosTotal.toLocaleString("pt-BR")} cadastrados (cheios, fechados, com aprovação de admin ou com erro)
             </div>
           )}
         </div>
