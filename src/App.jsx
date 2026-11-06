@@ -1692,7 +1692,6 @@ function OperacaoTab({ nichos }) {
                 <div className="flex items-center gap-2">
                   <Led color={exec.pausado ? C.pausado : C.ativo} live={!exec.pausado} />
                   <span className="text-[13px] zap-mono uppercase" style={{ color: C.text }}>{exec.zap_nichos?.nome}</span>
-                  <span className="text-[11px] zap-mono" style={{ color: C.sub }}>ciclo {exec.ciclo_atual}</span>
                   {exec.imagem_url && <span className="text-[10px] zap-mono px-1.5 py-[2px] rounded-[3px]" style={{ background: "rgba(255,255,255,0.06)", color: C.sub }}>📷 com imagem</span>}
                 </div>
                 <div className="flex items-center gap-2">
@@ -1880,7 +1879,12 @@ function VersoesAnuncio({ execucaoId, onSalvou }) {
 function situacaoNumeroDisparo(estado) {
   if (!estado) return { label: "ainda não iniciou", cor: C.sub };
   if (estado.pausado) return { label: "pausado (não envia)", cor: C.pausado };
-  if (estado.ciclo_completo) return { label: "terminou o ciclo — aguardando reinício", cor: C.aquecendo };
+  if (estado.ciclo_completo) {
+    const hora = estado.reinicia_em
+      ? new Date(estado.reinicia_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })
+      : null;
+    return { label: hora ? `terminou o ciclo ${estado.ciclo ?? 1} — próximo às ${hora}` : `terminou o ciclo ${estado.ciclo ?? 1}`, cor: C.aquecendo };
+  }
   if (!estado.proxima_acao) return { label: "pronto pra próxima mensagem", cor: C.ativo };
   const faltaMs = new Date(estado.proxima_acao).getTime() - Date.now();
   if (faltaMs <= 0) return { label: "pronto pra próxima mensagem", cor: C.ativo };
@@ -1962,6 +1966,7 @@ function DetalhesPorNumero({ execucaoId, nichoId }) {
           .select("id", { count: "exact", head: true })
           .eq("execucao_id", execucaoId)
           .eq("numero_id", n.id)
+          .eq("ciclo", porNumero[n.id]?.ciclo ?? 1)
           .eq("status", "enviado");
         const { count: total } = await supabase
           .from("zap_entradas")
