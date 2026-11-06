@@ -566,8 +566,8 @@ function LogsNumeroButton({ numero }) {
         quando: e.data_entrada ?? e.created_at,
         grupo: e.grupo_id,
         nome: nomesG[e.grupo_id],
-        tipo: e.status === "entrou" ? "entrou" : e.status === "aguardando_aprovacao" ? "aguardando aprovação" : "erro",
-        cor: e.status === "entrou" ? C.ativo : e.status === "aguardando_aprovacao" ? C.aquecendo : C.banido,
+        tipo: e.status === "entrou" || e.status === "aguardando_aprovacao" ? "entrou" : "erro",
+        cor: e.status === "entrou" || e.status === "aguardando_aprovacao" ? C.ativo : C.banido,
       })),
       ...(bloqueios.data ?? []).map((b) => ({
         id: `b${b.id}`,
@@ -677,9 +677,6 @@ function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
                     <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>
                       {n.entrou.toLocaleString("pt-BR")}<span style={{ color: C.sub }}> / </span>
                       <EditableLimite numero={n} campo="limite_grupos" onChanged={onRecarregar} />
-                      {n.aguardando > 0 && (
-                        <div className="text-[10px]" style={{ color: C.sub }}>+ {n.aguardando.toLocaleString("pt-BR")} aguardando aprovação</div>
-                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
