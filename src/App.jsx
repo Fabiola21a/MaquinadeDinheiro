@@ -44,9 +44,9 @@ function useZapData() {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(null);
 
-  const carregar = useCallback(async () => {
-    setLoading(true);
-    setErro(null);
+  const carregar = useCallback(async (silencioso = false) => {
+    if (!silencioso) setLoading(true);
+    if (!silencioso) setErro(null);
     try {
       const [n, num, cov, dia, chp] = await Promise.all([
         supabase.from("zap_nichos").select("id, nome").order("nome"),
@@ -66,15 +66,23 @@ function useZapData() {
       setDiarias(dia.data ?? []);
       setChips(chp.data ?? []);
     } catch (e) {
-      setErro(e.message ?? String(e));
+      if (!silencioso) setErro(e.message ?? String(e));
     } finally {
-      setLoading(false);
+      if (!silencioso) setLoading(false);
     }
   }, []);
 
   useEffect(() => { carregar(); }, [carregar]);
 
-  return { nichos, numeros, cobertura, diarias, chips, loading, erro, recarregar: carregar };
+  // atualiza sozinho a cada 20s (sem piscar nem sair da tela), só com a aba visível
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") carregar(true);
+    }, 20000);
+    return () => clearInterval(t);
+  }, [carregar]);
+
+  return { nichos, numeros, cobertura, diarias, chips, loading, erro, recarregar: () => carregar() };
 }
 
 // ---------- ui bits ----------
@@ -1517,15 +1525,15 @@ function OperacaoTab({ nichos }) {
   const [erro, setErro] = useState(null);
   const [distribuicoes, setDistribuicoes] = useState({});
 
-  const carregar = async () => {
-    setLoading(true);
+  const carregar = async (silencioso = false) => {
+    if (!silencioso) setLoading(true);
     const { data } = await supabase
       .from("zap_disparo_execucoes")
       .select("*, zap_nichos(nome)")
       .neq("status", "concluido")
       .order("iniciado_em", { ascending: false });
     setExecucoes(data ?? []);
-    setLoading(false);
+    if (!silencioso) setLoading(false);
 
     // busca a distribuição de envios por variante, pra cada execução
     const dist = {};
@@ -1547,6 +1555,14 @@ function OperacaoTab({ nichos }) {
   };
 
   useEffect(() => { carregar(); }, []);
+
+  // atualiza sozinho a cada 30s, só com a aba visível
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") carregar(true);
+    }, 30000);
+    return () => clearInterval(t);
+  }, []);
 
   const atualizarVariante = (i, valor) => {
     setVariantes((v) => v.map((x, idx) => (idx === i ? valor : x)));
