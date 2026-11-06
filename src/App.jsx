@@ -178,7 +178,12 @@ function StatusEditor({ numero, onChanged }) {
     const novoStatus = e.target.value;
     if (novoStatus === numero.status) return;
     setSalvando(true);
-    const { error } = await supabase.from("zap_numeros").update({ status: novoStatus }).eq("id", numero.id);
+    const patch = { status: novoStatus };
+    // mudar pra ativo/aquecendo libera a entrada na hora (zera o bloqueio);
+    // pausar segura a entrada de verdade até alguém reativar
+    if (novoStatus === "ativo" || novoStatus === "aquecendo") patch.proxima_tentativa = null;
+    if (novoStatus === "pausado") patch.proxima_tentativa = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+    const { error } = await supabase.from("zap_numeros").update(patch).eq("id", numero.id);
     setSalvando(false);
     if (!error) onChanged();
   };
