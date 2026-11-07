@@ -673,7 +673,21 @@ function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
                 <React.Fragment key={n.id}>
                   <tr style={{ borderTop: `1px solid ${C.line}` }}>
                     <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{n.instancia}</td>
-                    <td className="px-4 py-3"><StatusEditor numero={n} onChanged={onRecarregar} /></td>
+                    <td className="px-4 py-3">
+                      <StatusEditor numero={n} onChanged={onRecarregar} />
+                      {n.status === "pausado" && (
+                        <button
+                          onClick={async () => {
+                            await supabase.from("zap_numeros").update({ envia_pausado: !n.envia_pausado }).eq("id", n.id);
+                            onRecarregar();
+                          }}
+                          className="mt-1.5 zap-mono text-[10px] px-2 py-1 rounded border"
+                          style={{ borderColor: n.envia_pausado ? C.ativo : C.line, color: n.envia_pausado ? C.ativo : C.sub }}
+                        >
+                          {n.envia_pausado ? "● enviando mesmo pausado" : "enviar mesmo pausado"}
+                        </button>
+                      )}
+                    </td>
                     <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>
                       {n.entrou.toLocaleString("pt-BR")}<span style={{ color: C.sub }}> / </span>
                       <EditableLimite numero={n} campo="limite_grupos" onChanged={onRecarregar} />
@@ -1977,7 +1991,7 @@ function DetalhesPorNumero({ execucaoId, nichoId }) {
       .from("zap_numeros")
       .select("id, instancia, status")
       .eq("nicho_id", nichoId)
-      .in("status", ["ativo", "pausado"]);
+      .or("status.eq.ativo,and(status.eq.pausado,envia_pausado.eq.true)");
 
     const { data: estados } = await supabase
       .from("zap_disparo_estado")
