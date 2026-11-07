@@ -674,19 +674,22 @@ function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
                   <tr style={{ borderTop: `1px solid ${C.line}` }}>
                     <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>{n.instancia}</td>
                     <td className="px-4 py-3">
-                      <StatusEditor numero={n} onChanged={onRecarregar} />
-                      {n.status === "pausado" && (
-                        <button
-                          onClick={async () => {
-                            await supabase.from("zap_numeros").update({ envia_pausado: !n.envia_pausado }).eq("id", n.id);
-                            onRecarregar();
-                          }}
-                          className="mt-1.5 zap-mono text-[10px] px-2 py-1 rounded border"
-                          style={{ borderColor: n.envia_pausado ? C.ativo : C.line, color: n.envia_pausado ? C.ativo : C.sub }}
-                        >
-                          {n.envia_pausado ? "● enviando mesmo pausado" : "enviar mesmo pausado"}
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        <StatusEditor numero={n} onChanged={onRecarregar} />
+                        {n.status === "pausado" && (
+                          <button
+                            title={n.envia_pausado ? "Enviando mensagens mesmo com a entrada pausada (clique pra desligar)" : "Enviar mensagens mesmo com a entrada pausada"}
+                            onClick={async () => {
+                              await supabase.from("zap_numeros").update({ envia_pausado: !n.envia_pausado }).eq("id", n.id);
+                              onRecarregar();
+                            }}
+                            className="zap-mono text-[10px] px-2 py-1 rounded-full border"
+                            style={{ borderColor: n.envia_pausado ? C.ativo : C.line, color: n.envia_pausado ? C.ativo : C.sub }}
+                          >
+                            {n.envia_pausado ? "● envia" : "envia"}
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 zap-mono" style={{ color: C.text }}>
                       {n.entrou.toLocaleString("pt-BR")}<span style={{ color: C.sub }}> / </span>
