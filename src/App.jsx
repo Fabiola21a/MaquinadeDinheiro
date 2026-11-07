@@ -31,6 +31,7 @@ const STATUS_STYLE = {
   cheio:     { color: C.cheio,     label: "cheio" },
   banido:    { color: C.banido,    label: "banido" },
   pausado:   { color: C.pausado,   label: "pausado" },
+  so_envia:  { color: "#C9A227",    label: "só envia (não entra)" },
 };
 
 // ---------- data layer ----------
@@ -1977,7 +1978,7 @@ function DetalhesPorNumero({ execucaoId, nichoId }) {
       .from("zap_numeros")
       .select("id, instancia, status")
       .eq("nicho_id", nichoId)
-      .eq("status", "ativo");
+      .in("status", ["ativo", "so_envia"]);
 
     const { data: estados } = await supabase
       .from("zap_disparo_estado")
