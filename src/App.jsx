@@ -1536,6 +1536,31 @@ function UploadImagem({ imagemUrl, setImagemUrl }) {
   );
 }
 
+function TesteGrupoButton({ execucaoId }) {
+  const [estado, setEstado] = useState(null); // null | "enviando" | texto
+  const testar = async () => {
+    setEstado("enviando");
+    const { data, error } = await supabase.functions.invoke("zap-disparo-teste", { body: { execucao_id: execucaoId } });
+    if (error || data?.error) setEstado(`erro: ${data?.error ?? error.message}`);
+    else setEstado(`${data.enviados}/${data.total} enviadas por ${data.chip}${data.falhas?.length ? " · falhas: " + data.falhas.join(",") : ""}`);
+    setTimeout(() => setEstado(null), 12000);
+  };
+  return (
+    <span className="inline-flex items-center gap-2">
+      <button
+        onClick={testar}
+        disabled={estado === "enviando"}
+        title="Envia todas as versões do anúncio pro grupo 'TikTok teste' (não conta no disparo)"
+        className="px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body"
+        style={{ border: `1px solid ${C.line}`, color: C.sub, opacity: estado === "enviando" ? 0.5 : 1 }}
+      >
+        {estado === "enviando" ? "enviando…" : "testar no grupo"}
+      </button>
+      {estado && estado !== "enviando" && <span className="text-[10px] zap-mono" style={{ color: C.sub }}>{estado}</span>}
+    </span>
+  );
+}
+
 function OperacaoTab({ nichos }) {
   const [execucoes, setExecucoes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1743,6 +1768,7 @@ function OperacaoTab({ nichos }) {
                   <button onClick={() => alternarPausa(exec)} className="px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body" style={{ border: `1px solid ${C.line}`, color: C.sub }}>
                     {exec.pausado ? "retomar" : "pausar"}
                   </button>
+                  <TesteGrupoButton execucaoId={exec.id} />
                   <button onClick={() => encerrar(exec)} className="px-2.5 py-1.5 text-[11px] rounded-[4px] zap-body" style={{ border: `1px solid ${C.banido}55`, color: C.banido }}>
                     encerrar
                   </button>
