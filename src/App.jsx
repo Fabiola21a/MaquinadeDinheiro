@@ -1536,10 +1536,23 @@ function UploadImagem({ imagemUrl, setImagemUrl }) {
   );
 }
 
+async function subirArquivoImagem(file) {
+  const contentBase64 = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+  const { data, error } = await supabase.functions.invoke("zap-github-upload", { body: { filename: file.name, contentBase64 } });
+  if (error || data?.error) throw new Error(data?.error ?? error.message);
+  return data.url;
+}
+
+// Imagens do anúncio: 1, 2, 3... (a 1 fica em execucoes.imagem_url, as outras em zap_disparo_imagens).
 function ImagemDoAnuncio({ exec, onSalvou }) {
-  const [trocando, setTrocando] = useState(false);
-  const [adicionando, setAdicionando] = useState(false);
   const [extras, setExtras] = useState([]);
+  const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState(null);
 
   const carregarExtras = async () => {
     const { data } = await supabase.from("zap_disparo_imagens").select("id, url").eq("execucao_id", exec.id).order("id");
@@ -1548,64 +1561,94 @@ function ImagemDoAnuncio({ exec, onSalvou }) {
   useEffect(() => { carregarExtras(); }, [exec.id]);
 
   const tocar = () => supabase.from("zap_disparo_execucoes").update({ atualizado_em: new Date().toISOString() }).eq("id", exec.id);
+  const fim = async () => { await carregarExtras(); await tocar(); onSalvou(); };
 
-  const salvarPrincipal = async (url) => {
-    await supabase.from("zap_disparo_execucoes").update({ imagem_url: url || null }).eq("id", exec.id);
-    setTrocando(false);
-    setAdicionando(false);
-    onSalvou();
-  };
-  const adicionarExtra = async (url) => {
-    if (!url) return;
-    if (!exec.imagem_url) { await salvarPrincipal(url); return; }
-    await supabase.from("zap_disparo_imagens").insert({ execucao_id: exec.id, url });
-    setAdicionando(false);
-    await carregarExtras();
-    await tocar();
-    onSalvou();
-  };
-  const removerExtra = async (img) => {
-    if (!window.confirm("Remover essa imagem? As versões que usavam ela voltam pra imagem principal.")) return;
-    await supabase.from("zap_disparo_variantes").update({ imagem_url: null }).eq("execucao_id", exec.id).eq("imagem_url", img.url);
-    await supabase.from("zap_disparo_imagens").delete().eq("id", img.id);
-    await carregarExtras();
-    await tocar();
-    onSalvou();
+  const lista = [
+    ...(exec.imagem_url ? [{ tipo: "main", url: exec.imagem_url }] : []),
+    ...extras.map((x) => ({ tipo: "extra", id: x.id, url: x.url })),
+  ];
+
+  const executar = async (fn) => {
+    setOcupado(true); setErro(null);
+    try { await fn(); } catch (e) { setErro(e.message ?? String(e)); }
+    setOcupado(false);
   };
 
-  const mini = { width: 48, height: 48, objectFit: "cover", border: `1px solid ${C.line}` };
+  const adicionar = (file) => executar(async () => {
+    if (!file) return;
+    const url = await subirArquivoImagem(file);
+    if (!exec.imagem_url) await supabase.from("zap_disparo_execucoes").update({ imagem_url: url }).eq("id", exec.id);
+    else await supabase.from("zap_disparo_imagens").insert({ execucao_id: exec.id, url });
+    await fim();
+  });
 
-  if (!exec.imagem_url || trocando) {
+  const trocar = (item, file) => executar(async () => {
+    if (!file) return;
+    const url = await subirArquivoImagem(file);
+    if (item.tipo === "main") {
+      await supabase.from("zap_disparo_execucoes").update({ imagem_url: url }).eq("id", exec.id);
+    } else {
+      await supabase.from("zap_disparo_imagens").update({ url }).eq("id", item.id);
+      await supabase.from("zap_disparo_variantes").update({ imagem_url: url }).eq("execucao_id", exec.id).eq("imagem_url", item.url);
+    }
+    await fim();
+  });
+
+  const excluir = (item, n) => executar(async () => {
+    if (!window.confirm(`Excluir a imagem ${n}? As versões que usavam ela passam a usar a imagem 1${lista.length === 1 ? " (ou só texto, já que não sobra nenhuma)" : ""}.`)) return;
+    if (item.tipo === "extra") {
+      await supabase.from("zap_disparo_variantes").update({ imagem_url: null }).eq("execucao_id", exec.id).eq("imagem_url", item.url);
+      await supabase.from("zap_disparo_imagens").delete().eq("id", item.id);
+    } else if (extras.length > 0) {
+      // a próxima imagem vira a 1
+      const prox = extras[0];
+      await supabase.from("zap_disparo_variantes").update({ imagem_url: null }).eq("execucao_id", exec.id).eq("imagem_url", prox.url);
+      await supabase.from("zap_disparo_execucoes").update({ imagem_url: prox.url }).eq("id", exec.id);
+      await supabase.from("zap_disparo_imagens").delete().eq("id", prox.id);
+    } else {
+      await supabase.from("zap_disparo_execucoes").update({ imagem_url: null }).eq("id", exec.id);
+    }
+    await fim();
+  });
+
+  const mini = { width: 52, height: 52, objectFit: "cover", border: `1px solid ${C.line}` };
+
+  if (lista.length === 0) {
     return (
       <div className="mb-2">
-        <UploadImagem imagemUrl="" setImagemUrl={(u) => u && salvarPrincipal(u)} />
-        {trocando && <button onClick={() => setTrocando(false)} className="text-[11px] zap-mono -mt-2 mb-2" style={{ color: C.sub }}>cancelar</button>}
+        <UploadImagem imagemUrl="" setImagemUrl={async (u) => { if (!u) return; await supabase.from("zap_disparo_execucoes").update({ imagem_url: u }).eq("id", exec.id); await fim(); }} />
       </div>
     );
   }
 
   return (
     <div className="mb-2">
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex flex-col items-center gap-0.5">
-          <img src={exec.imagem_url} alt="imagem 1" className="rounded-[4px]" style={mini} />
-          <span className="text-[9px] zap-mono" style={{ color: C.sub }}>1 · principal</span>
-        </div>
-        {extras.map((img, i) => (
-          <div key={img.id} className="flex flex-col items-center gap-0.5">
-            <img src={img.url} alt={`imagem ${i + 2}`} className="rounded-[4px]" style={mini} />
-            <button onClick={() => removerExtra(img)} className="text-[9px] zap-mono" style={{ color: C.sub }}>{i + 2} · remover</button>
+      <div className="flex items-start gap-3 flex-wrap">
+        {lista.map((item, i) => (
+          <div key={item.id ?? "main"} className="flex flex-col items-center gap-1">
+            <div className="relative">
+              <img src={item.url} alt={`imagem ${i + 1}`} className="rounded-[4px]" style={{ ...mini, opacity: ocupado ? 0.5 : 1 }} />
+              <button
+                onClick={() => excluir(item, i + 1)}
+                disabled={ocupado}
+                title="Excluir essa imagem"
+                className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center text-[10px] leading-none"
+                style={{ background: C.panel, border: `1px solid ${C.line}`, color: C.banido }}
+              >×</button>
+            </div>
+            <span className="text-[10px] zap-mono" style={{ color: C.sub }}>{i + 1}</span>
+            <label className="text-[10px] zap-mono cursor-pointer" style={{ color: C.ativo }}>
+              trocar
+              <input type="file" accept="image/*" className="hidden" disabled={ocupado} onChange={(e) => { trocar(item, e.target.files?.[0]); e.target.value = ""; }} />
+            </label>
           </div>
         ))}
-        <button onClick={() => setAdicionando((v) => !v)} className="text-[11px] zap-mono px-2 py-1.5 rounded-[4px]" style={{ border: `1px dashed ${C.line}`, color: C.ativo }}>+ imagem</button>
-        <button onClick={() => setTrocando(true)} className="text-[11px] zap-mono" style={{ color: C.sub }}>trocar principal</button>
-        <button onClick={() => { if (window.confirm("Tirar a imagem principal? As versões passam a ir só com texto (as imagens extras ficam guardadas).")) salvarPrincipal(""); }} className="text-[11px] zap-mono" style={{ color: C.sub }}>remover principal</button>
+        <label className="text-[11px] zap-mono px-3 py-4 rounded-[4px] cursor-pointer" style={{ border: `1px dashed ${C.line}`, color: C.ativo }}>
+          {ocupado ? "enviando…" : "+ imagem"}
+          <input type="file" accept="image/*" className="hidden" disabled={ocupado} onChange={(e) => { adicionar(e.target.files?.[0]); e.target.value = ""; }} />
+        </label>
       </div>
-      {adicionando && (
-        <div className="mt-2">
-          <UploadImagem imagemUrl="" setImagemUrl={adicionarExtra} />
-        </div>
-      )}
+      {erro && <div className="text-[11px] mt-1.5" style={{ color: C.banido }}>{erro}</div>}
     </div>
   );
 }
