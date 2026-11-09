@@ -1538,24 +1538,74 @@ function UploadImagem({ imagemUrl, setImagemUrl }) {
 
 function ImagemDoAnuncio({ exec, onSalvou }) {
   const [trocando, setTrocando] = useState(false);
-  const salvar = async (url) => {
+  const [adicionando, setAdicionando] = useState(false);
+  const [extras, setExtras] = useState([]);
+
+  const carregarExtras = async () => {
+    const { data } = await supabase.from("zap_disparo_imagens").select("id, url").eq("execucao_id", exec.id).order("id");
+    setExtras(data ?? []);
+  };
+  useEffect(() => { carregarExtras(); }, [exec.id]);
+
+  const tocar = () => supabase.from("zap_disparo_execucoes").update({ atualizado_em: new Date().toISOString() }).eq("id", exec.id);
+
+  const salvarPrincipal = async (url) => {
     await supabase.from("zap_disparo_execucoes").update({ imagem_url: url || null }).eq("id", exec.id);
     setTrocando(false);
+    setAdicionando(false);
     onSalvou();
   };
-  if (exec.imagem_url && !trocando) {
+  const adicionarExtra = async (url) => {
+    if (!url) return;
+    if (!exec.imagem_url) { await salvarPrincipal(url); return; }
+    await supabase.from("zap_disparo_imagens").insert({ execucao_id: exec.id, url });
+    setAdicionando(false);
+    await carregarExtras();
+    await tocar();
+    onSalvou();
+  };
+  const removerExtra = async (img) => {
+    if (!window.confirm("Remover essa imagem? As versões que usavam ela voltam pra imagem principal.")) return;
+    await supabase.from("zap_disparo_variantes").update({ imagem_url: null }).eq("execucao_id", exec.id).eq("imagem_url", img.url);
+    await supabase.from("zap_disparo_imagens").delete().eq("id", img.id);
+    await carregarExtras();
+    await tocar();
+    onSalvou();
+  };
+
+  const mini = { width: 48, height: 48, objectFit: "cover", border: `1px solid ${C.line}` };
+
+  if (!exec.imagem_url || trocando) {
     return (
-      <div className="flex items-center gap-3 mb-2">
-        <img src={exec.imagem_url} alt="imagem do anúncio" className="rounded-[4px]" style={{ width: 48, height: 48, objectFit: "cover", border: `1px solid ${C.line}` }} />
-        <button onClick={() => setTrocando(true)} className="text-[11px] zap-mono" style={{ color: C.ativo }}>trocar imagem</button>
-        <button onClick={() => { if (window.confirm("Tirar a imagem do anúncio? Todas as versões passam a ir só com texto.")) salvar(""); }} className="text-[11px] zap-mono" style={{ color: C.sub }}>remover</button>
+      <div className="mb-2">
+        <UploadImagem imagemUrl="" setImagemUrl={(u) => u && salvarPrincipal(u)} />
+        {trocando && <button onClick={() => setTrocando(false)} className="text-[11px] zap-mono -mt-2 mb-2" style={{ color: C.sub }}>cancelar</button>}
       </div>
     );
   }
+
   return (
     <div className="mb-2">
-      <UploadImagem imagemUrl="" setImagemUrl={(u) => u && salvar(u)} />
-      {trocando && <button onClick={() => setTrocando(false)} className="text-[11px] zap-mono -mt-2 mb-2" style={{ color: C.sub }}>cancelar</button>}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex flex-col items-center gap-0.5">
+          <img src={exec.imagem_url} alt="imagem 1" className="rounded-[4px]" style={mini} />
+          <span className="text-[9px] zap-mono" style={{ color: C.sub }}>1 · principal</span>
+        </div>
+        {extras.map((img, i) => (
+          <div key={img.id} className="flex flex-col items-center gap-0.5">
+            <img src={img.url} alt={`imagem ${i + 2}`} className="rounded-[4px]" style={mini} />
+            <button onClick={() => removerExtra(img)} className="text-[9px] zap-mono" style={{ color: C.sub }}>{i + 2} · remover</button>
+          </div>
+        ))}
+        <button onClick={() => setAdicionando((v) => !v)} className="text-[11px] zap-mono px-2 py-1.5 rounded-[4px]" style={{ border: `1px dashed ${C.line}`, color: C.ativo }}>+ imagem</button>
+        <button onClick={() => setTrocando(true)} className="text-[11px] zap-mono" style={{ color: C.sub }}>trocar principal</button>
+        <button onClick={() => { if (window.confirm("Tirar a imagem principal? As versões passam a ir só com texto (as imagens extras ficam guardadas).")) salvarPrincipal(""); }} className="text-[11px] zap-mono" style={{ color: C.sub }}>remover principal</button>
+      </div>
+      {adicionando && (
+        <div className="mt-2">
+          <UploadImagem imagemUrl="" setImagemUrl={adicionarExtra} />
+        </div>
+      )}
     </div>
   );
 }
@@ -1809,7 +1859,7 @@ function OperacaoTab({ nichos }) {
                 {abertos[exec.id] ? "ocultar versões" : "ver versões"}
               </button>
               <ImagemDoAnuncio exec={exec} onSalvou={carregar} />
-              {abertos[exec.id] && <VersoesAnuncio execucaoId={exec.id} temImagem={!!exec.imagem_url} onSalvou={carregar} />}
+              {abertos[exec.id] && <VersoesAnuncio execucaoId={exec.id} temImagem={!!exec.imagem_url} imagemPrincipal={exec.imagem_url} chave={exec.atualizado_em} onSalvou={carregar} />}
               <div className="flex items-center gap-4 text-[11px] zap-mono mb-2" style={{ color: C.sub }}>
                 <span>enviados <span style={{ color: C.text }}>{exec.total_enviados ?? 0}</span></span>
                 <span>erros <span style={{ color: C.text }}>{exec.total_erros ?? 0}</span></span>
@@ -1830,8 +1880,9 @@ function OperacaoTab({ nichos }) {
   );
 }
 
-function VersoesAnuncio({ execucaoId, temImagem, onSalvou }) {
+function VersoesAnuncio({ execucaoId, temImagem, imagemPrincipal, chave, onSalvou }) {
   const [versoes, setVersoes] = useState(null);
+  const [extras, setExtras] = useState([]);
   const [editados, setEditados] = useState({}); // variante_id -> texto novo
   const [novas, setNovas] = useState([]); // textos de versões ainda não salvas
   const [ocupado, setOcupado] = useState(null);
@@ -1840,13 +1891,15 @@ function VersoesAnuncio({ execucaoId, temImagem, onSalvou }) {
   const recarregar = async () => {
     const { data } = await supabase
       .from("zap_disparo_variantes")
-      .select("id, texto, com_imagem")
+      .select("id, texto, com_imagem, imagem_url")
       .eq("execucao_id", execucaoId)
       .order("id");
     setVersoes(data ?? []);
+    const { data: ex } = await supabase.from("zap_disparo_imagens").select("id, url").eq("execucao_id", execucaoId).order("id");
+    setExtras(ex ?? []);
   };
 
-  useEffect(() => { recarregar(); }, [execucaoId]);
+  useEffect(() => { recarregar(); }, [execucaoId, chave, imagemPrincipal]);
 
   const salvar = async (v) => {
     const novo = (editados[v.id] ?? "").trim();
@@ -1913,17 +1966,22 @@ function VersoesAnuncio({ execucaoId, temImagem, onSalvou }) {
               style={estiloCampo(mudou)}
             />
             {temImagem && (
-              <button
-                title={v.com_imagem ? "Essa versão vai COM a imagem (clique pra mandar só texto)" : "Essa versão vai SÓ com texto (clique pra mandar com a imagem)"}
-                onClick={async () => {
-                  await supabase.from("zap_disparo_variantes").update({ com_imagem: !v.com_imagem }).eq("id", v.id);
+              <select
+                title="Qual imagem essa versão leva (ou só texto)"
+                value={v.com_imagem === false ? "txt" : (v.imagem_url && extras.some((x) => x.url === v.imagem_url) ? v.imagem_url : "")}
+                onChange={async (e) => {
+                  const val = e.target.value;
+                  const upd = val === "txt" ? { com_imagem: false } : { com_imagem: true, imagem_url: val || null };
+                  await supabase.from("zap_disparo_variantes").update(upd).eq("id", v.id);
                   await recarregar();
                 }}
-                className="px-2 py-1.5 mt-1 text-[11px] rounded-[4px] zap-mono"
-                style={{ border: `1px solid ${v.com_imagem ? C.ativo : C.line}`, color: v.com_imagem ? C.ativo : C.sub }}
+                className="px-1.5 py-1.5 mt-1 text-[11px] rounded-[4px] zap-mono outline-none"
+                style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${v.com_imagem === false ? C.line : C.ativo}`, color: v.com_imagem === false ? C.sub : C.ativo }}
               >
-                {v.com_imagem ? "📷 com imagem" : "só texto"}
-              </button>
+                <option value="txt">só texto</option>
+                <option value="">📷 imagem 1</option>
+                {extras.map((x, k) => <option key={x.id} value={x.url}>📷 imagem {k + 2}</option>)}
+              </select>
             )}
             {mudou && (
               <button
