@@ -1536,6 +1536,30 @@ function UploadImagem({ imagemUrl, setImagemUrl }) {
   );
 }
 
+function ImagemDoAnuncio({ exec, onSalvou }) {
+  const [trocando, setTrocando] = useState(false);
+  const salvar = async (url) => {
+    await supabase.from("zap_disparo_execucoes").update({ imagem_url: url || null }).eq("id", exec.id);
+    setTrocando(false);
+    onSalvou();
+  };
+  if (exec.imagem_url && !trocando) {
+    return (
+      <div className="flex items-center gap-3 mb-2">
+        <img src={exec.imagem_url} alt="imagem do anúncio" className="rounded-[4px]" style={{ width: 48, height: 48, objectFit: "cover", border: `1px solid ${C.line}` }} />
+        <button onClick={() => setTrocando(true)} className="text-[11px] zap-mono" style={{ color: C.ativo }}>trocar imagem</button>
+        <button onClick={() => { if (window.confirm("Tirar a imagem do anúncio? Todas as versões passam a ir só com texto.")) salvar(""); }} className="text-[11px] zap-mono" style={{ color: C.sub }}>remover</button>
+      </div>
+    );
+  }
+  return (
+    <div className="mb-2">
+      <UploadImagem imagemUrl="" setImagemUrl={(u) => u && salvar(u)} />
+      {trocando && <button onClick={() => setTrocando(false)} className="text-[11px] zap-mono -mt-2 mb-2" style={{ color: C.sub }}>cancelar</button>}
+    </div>
+  );
+}
+
 function TesteGrupoButton({ execucaoId }) {
   const [estado, setEstado] = useState(null); // null | "enviando" | texto
   const testar = async () => {
@@ -1784,7 +1808,8 @@ function OperacaoTab({ nichos }) {
               >
                 {abertos[exec.id] ? "ocultar versões" : "ver versões"}
               </button>
-              {abertos[exec.id] && <VersoesAnuncio execucaoId={exec.id} onSalvou={carregar} />}
+              <ImagemDoAnuncio exec={exec} onSalvou={carregar} />
+              {abertos[exec.id] && <VersoesAnuncio execucaoId={exec.id} temImagem={!!exec.imagem_url} onSalvou={carregar} />}
               <div className="flex items-center gap-4 text-[11px] zap-mono mb-2" style={{ color: C.sub }}>
                 <span>enviados <span style={{ color: C.text }}>{exec.total_enviados ?? 0}</span></span>
                 <span>erros <span style={{ color: C.text }}>{exec.total_erros ?? 0}</span></span>
@@ -1805,7 +1830,7 @@ function OperacaoTab({ nichos }) {
   );
 }
 
-function VersoesAnuncio({ execucaoId, onSalvou }) {
+function VersoesAnuncio({ execucaoId, temImagem, onSalvou }) {
   const [versoes, setVersoes] = useState(null);
   const [editados, setEditados] = useState({}); // variante_id -> texto novo
   const [novas, setNovas] = useState([]); // textos de versões ainda não salvas
@@ -1815,7 +1840,7 @@ function VersoesAnuncio({ execucaoId, onSalvou }) {
   const recarregar = async () => {
     const { data } = await supabase
       .from("zap_disparo_variantes")
-      .select("id, texto")
+      .select("id, texto, com_imagem")
       .eq("execucao_id", execucaoId)
       .order("id");
     setVersoes(data ?? []);
@@ -1887,6 +1912,19 @@ function VersoesAnuncio({ execucaoId, onSalvou }) {
               className="flex-1 h-20 rounded-[4px] px-3 py-2 text-[12px] zap-body outline-none resize-none"
               style={estiloCampo(mudou)}
             />
+            {temImagem && (
+              <button
+                title={v.com_imagem ? "Essa versão vai COM a imagem (clique pra mandar só texto)" : "Essa versão vai SÓ com texto (clique pra mandar com a imagem)"}
+                onClick={async () => {
+                  await supabase.from("zap_disparo_variantes").update({ com_imagem: !v.com_imagem }).eq("id", v.id);
+                  await recarregar();
+                }}
+                className="px-2 py-1.5 mt-1 text-[11px] rounded-[4px] zap-mono"
+                style={{ border: `1px solid ${v.com_imagem ? C.ativo : C.line}`, color: v.com_imagem ? C.ativo : C.sub }}
+              >
+                {v.com_imagem ? "📷 com imagem" : "só texto"}
+              </button>
+            )}
             {mudou && (
               <button
                 onClick={() => salvar(v)}
