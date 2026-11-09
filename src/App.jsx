@@ -2235,7 +2235,7 @@ function DetalhesPorNumero({ execucaoId, nichoId }) {
               <div className="flex items-center gap-2">
                 <span className="relative group inline-flex items-center gap-1.5 cursor-default">
                   <span className="text-[11px] zap-mono" style={{ color: C.sub }}>{enviados}/{total} enviados</span>
-                  {erros > 0 && <span className="text-[11px] zap-mono" style={{ color: C.banido }}>{erros} erro</span>}
+                  {total - enviados > 0 && <span className="text-[11px] zap-mono" style={{ color: C.banido }}>{total - enviados} não enviados</span>}
                   <span className="hidden group-hover:block absolute right-0 top-full mt-1 z-20 w-64 p-3 rounded-[4px] text-[11px] zap-body" style={{ background: C.bg ?? "#0B0F0D", border: `1px solid ${C.line}`, color: C.text, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
                     <div className="zap-mono mb-1.5" style={{ color: C.sub }}>{total} grupos neste chip (ciclo {estado?.ciclo ?? 1})</div>
                     <div className="flex justify-between"><span>Enviados</span><span className="zap-mono">{enviados}</span></div>
