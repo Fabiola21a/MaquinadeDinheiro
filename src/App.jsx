@@ -2135,12 +2135,23 @@ function DetalhesPorNumero({ execucaoId, nichoId }) {
           .eq("numero_id", n.id)
           .eq("ciclo", porNumero[n.id]?.ciclo ?? 1)
           .eq("status", "enviado");
-        const { count: total } = await supabase
-          .from("zap_entradas")
+        const { count: erros } = await supabase
+          .from("zap_disparo_log")
           .select("id", { count: "exact", head: true })
+          .eq("execucao_id", execucaoId)
           .eq("numero_id", n.id)
-          .in("status", ["entrou", "aguardando_aprovacao"]);
-        return { numero: n, estado: porNumero[n.id], enviados: count ?? 0, total: total ?? 0 };
+          .eq("ciclo", porNumero[n.id]?.ciclo ?? 1)
+          .eq("status", "erro");
+        const { data: ent } = await supabase
+          .from("zap_entradas")
+          .select("status, zap_grupos(fechado)")
+          .eq("numero_id", n.id)
+          .in("status", ["entrou", "aguardando_aprovacao"])
+          .limit(5000);
+        const total = (ent ?? []).length;
+        const pendentes = (ent ?? []).filter((x) => x.status === "aguardando_aprovacao").length;
+        const fechados = (ent ?? []).filter((x) => x.status === "entrou" && x.zap_grupos?.fechado).length;
+        return { numero: n, estado: porNumero[n.id], enviados: count ?? 0, total, erros: erros ?? 0, pendentes, fechados };
       })
     );
     setLinhas(combinado);
@@ -2167,8 +2178,9 @@ function DetalhesPorNumero({ execucaoId, nichoId }) {
 
   return (
     <div className="pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
-      {linhas.map(({ numero, estado, enviados, total }) => {
+      {linhas.map(({ numero, estado, enviados, total, erros, pendentes, fechados }) => {
         const sit = situacaoNumeroDisparo(estado);
+        const restante = Math.max(total - enviados - erros - pendentes - fechados, 0);
         return (
           <div key={numero.id}>
             <div className="flex items-center justify-between py-1">
@@ -2178,7 +2190,19 @@ function DetalhesPorNumero({ execucaoId, nichoId }) {
                 <span className="text-[11px] zap-body" style={{ color: C.sub }}>{sit.label}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[11px] zap-mono" style={{ color: C.sub }}>{enviados}/{total} enviados</span>
+                <span className="relative group inline-flex items-center gap-1.5 cursor-default">
+                  <span className="text-[11px] zap-mono" style={{ color: C.sub }}>{enviados}/{total} enviados</span>
+                  {erros > 0 && <span className="text-[11px] zap-mono" style={{ color: C.banido }}>{erros} erro</span>}
+                  <span className="hidden group-hover:block absolute right-0 top-full mt-1 z-20 w-64 p-3 rounded-[4px] text-[11px] zap-body" style={{ background: C.bg ?? "#0B0F0D", border: `1px solid ${C.line}`, color: C.text, boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
+                    <div className="zap-mono mb-1.5" style={{ color: C.sub }}>{total} grupos neste chip (ciclo {estado?.ciclo ?? 1})</div>
+                    <div className="flex justify-between"><span>Enviados</span><span className="zap-mono">{enviados}</span></div>
+                    <div className="flex justify-between" style={{ color: erros ? C.banido : C.sub }}><span>Com erro no envio</span><span className="zap-mono">{erros}</span></div>
+                    <div className="flex justify-between"><span>Aguardando aprovação</span><span className="zap-mono">{pendentes}</span></div>
+                    <div className="flex justify-between"><span>Fechados (só admin manda)</span><span className="zap-mono">{fechados}</span></div>
+                    {restante > 0 && <div className="flex justify-between"><span>Ainda a enviar</span><span className="zap-mono">{restante}</span></div>}
+                    <div className="mt-2" style={{ color: C.sub }}>Pendentes e fechados não recebem envio: ela ainda não é membro, ou só admin pode mandar.</div>
+                  </span>
+                </span>
                 <button onClick={() => alternarPausa(numero.id, estado)} className="text-[11px]" style={{ color: estado?.pausado ? C.ativo : C.pausado }}>
                   {estado?.pausado ? "retomar" : "pausar"}
                 </button>
