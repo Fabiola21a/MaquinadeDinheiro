@@ -101,7 +101,15 @@ function EditableLimite({ numero, campo, onChanged }) {
     if (!novo || novo === numero[campo]) { setEditando(false); return; }
     setSalvando(true);
 
-    const patch = { [campo]: novo };
+    let patch = { [campo]: novo };
+    // limite do dia (rampa): editar define o ritmo de hoje e a rampa (+10/semana) recomeça daqui
+    if (campo === "limite_hoje") {
+      patch = {
+        rampa_base: novo,
+        rampa_inicio: new Date().toISOString(),
+        limite_entradas_dia: Math.max(numero.limite_entradas_dia ?? 50, novo),
+      };
+    }
     // reflete "cheio" na hora, sem esperar o próximo tick do cron — só mexe em
     // status automático (ativo/aquecendo/cheio), nunca em banido/pausado (manuais)
     if (campo === "limite_grupos" && ["ativo", "aquecendo", "cheio"].includes(numero.status)) {
@@ -699,9 +707,7 @@ function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
                       <div className="flex items-center gap-2">
                         <Dosimeter value={n.hoje} max={n.limite_hoje ?? n.limite_entradas_dia} />
                         <span className="zap-mono text-[11px]" style={{ color: C.sub }}>
-                          {n.hoje}/{n.limite_hoje ?? n.limite_entradas_dia}
-                          <span className="text-[10px]" style={{ opacity: 0.7 }}> · teto </span>
-                          <EditableLimite numero={n} campo="limite_entradas_dia" onChanged={onRecarregar} />
+                          {n.hoje}/<EditableLimite numero={n} campo="limite_hoje" onChanged={onRecarregar} />
                         </span>
                       </div>
                     </td>
