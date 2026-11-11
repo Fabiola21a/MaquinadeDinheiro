@@ -697,9 +697,11 @@ function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <Dosimeter value={n.hoje} max={n.limite_entradas_dia} />
+                        <Dosimeter value={n.hoje} max={n.limite_hoje ?? n.limite_entradas_dia} />
                         <span className="zap-mono text-[11px]" style={{ color: C.sub }}>
-                          {n.hoje}/<EditableLimite numero={n} campo="limite_entradas_dia" onChanged={onRecarregar} />
+                          {n.hoje}/{n.limite_hoje ?? n.limite_entradas_dia}
+                          <span className="text-[10px]" style={{ opacity: 0.7 }}> · teto </span>
+                          <EditableLimite numero={n} campo="limite_entradas_dia" onChanged={onRecarregar} />
                         </span>
                       </div>
                     </td>
