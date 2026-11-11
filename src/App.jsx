@@ -2112,6 +2112,7 @@ function HistoricoNumero({ execucaoId, numeroId, onFechar }) {
       .select("id, grupo_id, status, enviado_em, created_at")
       .eq("execucao_id", execucaoId)
       .eq("numero_id", numeroId)
+      .neq("status", "pulado")
       .order("created_at", { ascending: false })
       .limit(10)
       .then(async ({ data }) => {
