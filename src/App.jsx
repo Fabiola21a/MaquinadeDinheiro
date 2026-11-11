@@ -28,7 +28,7 @@ const STATUS_STYLE = {
   ativo:     { color: C.ativo,     label: "ativo" },
   aquecendo: { color: C.aquecendo, label: "aquecendo" },
   revalidando: { color: C.aquecendo, label: "revalidando" },
-  cheio:     { color: C.cheio,     label: "cheio" },
+  cheio:     { color: C.cheio,     label: "finalizado" },
   banido:    { color: C.banido,    label: "banido" },
   pausado:   { color: C.pausado,   label: "pausado" },
 };
@@ -2159,7 +2159,7 @@ function DetalhesPorNumero({ execucaoId, nichoId }) {
       .from("zap_numeros")
       .select("id, instancia, status")
       .eq("nicho_id", nichoId)
-      .or("status.eq.ativo,and(status.eq.pausado,envia_pausado.eq.true)");
+      .or("status.eq.ativo,status.eq.cheio,and(status.eq.pausado,envia_pausado.eq.true)");
 
     const { data: estados } = await supabase
       .from("zap_disparo_estado")
