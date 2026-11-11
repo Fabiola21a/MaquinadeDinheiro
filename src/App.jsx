@@ -28,7 +28,7 @@ const STATUS_STYLE = {
   ativo:     { color: C.ativo,     label: "ativo" },
   aquecendo: { color: C.aquecendo, label: "aquecendo" },
   revalidando: { color: C.aquecendo, label: "revalidando" },
-  cheio:     { color: C.cheio,     label: "finalizado" },
+  cheio:     { color: C.ativo,     label: "finalizado" },
   banido:    { color: C.banido,    label: "banido" },
   pausado:   { color: C.pausado,   label: "pausado" },
 };
@@ -278,7 +278,7 @@ function CoverageStrip({ numeros, cobertura, loading }) {
         </div>
         <div className="flex gap-1.5">
           {numeros.map((n) => (
-            <div key={n.id} title={`${n.instancia} · ${n.nicho} · ${STATUS_STYLE[n.status]?.label ?? n.status}`} className="w-[10px] h-6 rounded-[2px]" style={{ background: STATUS_STYLE[n.status]?.color ?? C.pausado, opacity: n.status === "cheio" ? 0.5 : 1 }} />
+            <div key={n.id} title={`${n.instancia} · ${n.nicho} · ${STATUS_STYLE[n.status]?.label ?? n.status}`} className="w-[10px] h-6 rounded-[2px]" style={{ background: STATUS_STYLE[n.status]?.color ?? C.pausado, opacity: 1 }} />
           ))}
         </div>
       </div>
