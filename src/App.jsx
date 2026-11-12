@@ -1802,17 +1802,33 @@ function OperacaoTab({ nichos }) {
 
       {regrasAbertas && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setRegrasAbertas(false)}>
-          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-[520px] rounded-[6px] p-5" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-[520px] rounded-[6px] p-5" style={{ background: C.panel, border: `1px solid ${C.line}`, maxHeight: "85vh", overflowY: "auto" }}>
             <div className="flex items-center justify-between mb-3">
               <div className="text-[10px] zap-mono uppercase tracking-wide" style={{ color: C.sub }}>Regras de segurança do disparo</div>
               <button onClick={() => setRegrasAbertas(false)} className="text-[12px]" style={{ color: C.sub }}>fechar</button>
             </div>
             <ul className="text-[12px] zap-body flex flex-col gap-2" style={{ color: C.sub }}>
-              <li>• Delay de <span style={{ color: C.text }}>30 a 60 segundos</span> entre uma mensagem e outra, sempre variando (nunca fixo)</li>
+              <li>• Delay de <span style={{ color: C.text }}>30 a 60 segundos</span> entre uma mensagem e outra, sempre variando (nunca fixo). Pode ser ajustado por número (ex.: Jessica usa 20 a 40 segundos e manda 2 mensagens por minuto)</li>
               <li>• Lote de <span style={{ color: C.text }}>10 a 15 mensagens</span>, depois <span style={{ color: C.text }}>pausa de 5 a 10 minutos</span> antes de continuar</li>
               <li>• Cada envio é único: sua versão de texto + emoji/pontuação variados + caractere invisível — nunca duas mensagens idênticas</li>
               <li>• Cada anúncio pertence a <span style={{ color: C.text }}>1 nicho só</span>, mas você pode ter <span style={{ color: C.text }}>vários anúncios simultâneos</span> no mesmo nicho</li>
-              <li>• Se o WhatsApp bloquear um número (rate-overlimit), ele para na hora e só tenta de novo depois de <span style={{ color: C.text }}>2 dias</span> (no próximo ciclo de 6h de Brasília)</li>
+              <li>• Com vários anúncios no mesmo nicho, o número tem <span style={{ color: C.text }}>um ritmo só</span> (delay e pausas valem pro número inteiro) e <span style={{ color: C.text }}>alterna os anúncios</span>. Todo grupo recebe os dois; o segundo anúncio percorre a lista de trás pra frente pra não chegar junto com o primeiro no mesmo grupo</li>
+              <li>• Terminou de mandar em todos os grupos do número? Espera <span style={{ color: C.text }}>4 horas</span> e começa o próximo ciclo</li>
+              <li>• Número <span style={{ color: C.text }}>finalizado</span> (completou o limite de grupos) continua disparando normalmente</li>
+              <li>• Grupo <span style={{ color: C.text }}>aguardando aprovação</span>: o número confere se já virou membro; se ainda não, pula o grupo naquele ciclo e não envia</li>
+              <li>• Grupo em que <span style={{ color: C.text }}>só administrador pode enviar</span>: pula nas 2 primeiras vezes; na <span style={{ color: C.text }}>3ª vez o número sai do grupo</span> e o grupo é marcado como inválido (não entra mais). Se o grupo abrir, a contagem zera</li>
+              <li>• Mensagens de texto são enviadas <span style={{ color: C.text }}>sem prévia de link</span></li>
+            </ul>
+
+            <div className="text-[10px] zap-mono uppercase tracking-wide mt-5 mb-3" style={{ color: C.sub }}>Regras de entrada em grupos</div>
+            <ul className="text-[12px] zap-body flex flex-col gap-2" style={{ color: C.sub }}>
+              <li>• Intervalo de <span style={{ color: C.text }}>3 a 10 minutos</span> entre uma tentativa de entrada e outra, sempre variando. A cada 10 tentativas, o número descansa <span style={{ color: C.text }}>30 a 45 minutos</span></li>
+              <li>• <span style={{ color: C.text }}>Rampa de entradas por dia</span>: 20 na 1ª semana, depois 30, 40 e 50 (+10 por semana, até o teto do número). O número depois da barra mostra o limite real do dia e pode ser editado a qualquer momento — a rampa recomeça a partir do valor que você colocar</li>
+              <li>• O dia de entradas começa às <span style={{ color: C.text }}>06:00 (Brasília)</span> e conta pedidos aguardando aprovação também</li>
+              <li>• Se o WhatsApp bloquear um número (rate-overlimit), ele para na hora e fica <span style={{ color: C.text }}>pausado por 3 dias</span>. Volta como <span style={{ color: C.text }}>ativo</span> (não aquecendo), na <span style={{ color: C.text }}>metade do ritmo</span> em que estava (mínimo de 10 por dia), e a rampa recomeça dali</li>
+              <li>• Pedido de entrada <span style={{ color: C.text }}>sem aprovação há mais de 7 dias</span> sai do número (todo dia às 06:17) e libera a vaga. O grupo <span style={{ color: C.text }}>não é banido</span>: outro número ainda pode tentar entrar nele</li>
+              <li>• Número <span style={{ color: C.text }}>finalizado</span> que saiu de grupos (ex.: só admin) abre vaga e volta a entrar em grupos novos até completar o limite de novo</li>
+              <li>• Grupo com limite de 1.024 membros, convite inválido ou fechado (só admin) não é tentado de novo</li>
             </ul>
           </div>
         </div>
