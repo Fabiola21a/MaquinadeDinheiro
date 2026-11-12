@@ -1808,7 +1808,7 @@ function OperacaoTab({ nichos }) {
               <button onClick={() => setRegrasAbertas(false)} className="text-[12px]" style={{ color: C.sub }}>fechar</button>
             </div>
             <ul className="text-[12px] zap-body flex flex-col gap-2" style={{ color: C.sub }}>
-              <li>• Delay de <span style={{ color: C.text }}>30 a 60 segundos</span> entre uma mensagem e outra, sempre variando (nunca fixo). Pode ser ajustado por número (ex.: Jessica usa 20 a 40 segundos e manda 2 mensagens por minuto)</li>
+              <li>• Delay de <span style={{ color: C.text }}>30 a 60 segundos</span> entre uma mensagem e outra, sempre variando (nunca fixo)</li>
               <li>• Lote de <span style={{ color: C.text }}>10 a 15 mensagens</span>, depois <span style={{ color: C.text }}>pausa de 5 a 10 minutos</span> antes de continuar</li>
               <li>• Cada envio é único: sua versão de texto + emoji/pontuação variados + caractere invisível — nunca duas mensagens idênticas</li>
               <li>• Cada anúncio pertence a <span style={{ color: C.text }}>1 nicho só</span>, mas você pode ter <span style={{ color: C.text }}>vários anúncios simultâneos</span> no mesmo nicho</li>
