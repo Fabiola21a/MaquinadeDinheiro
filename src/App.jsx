@@ -1815,7 +1815,7 @@ function OperacaoTab({ nichos }) {
               <li>• Com vários anúncios no mesmo nicho, o número tem <span style={{ color: C.text }}>um ritmo só</span> (delay e pausas valem pro número inteiro) e <span style={{ color: C.text }}>alterna os anúncios</span>. Todo grupo recebe os dois; o segundo anúncio percorre a lista de trás pra frente pra não chegar junto com o primeiro no mesmo grupo</li>
               <li>• Terminou de mandar em todos os grupos do número? Espera <span style={{ color: C.text }}>4 horas</span> e começa o próximo ciclo</li>
               <li>• Número <span style={{ color: C.text }}>finalizado</span> (completou o limite de grupos) continua disparando normalmente</li>
-              <li>• Grupo <span style={{ color: C.text }}>aguardando aprovação</span>: o número confere se já virou membro; se ainda não, pula o grupo naquele ciclo e não envia</li>
+              <li>• Grupo <span style={{ color: C.text }}>aguardando aprovação</span> não recebe disparo. A cada <span style={{ color: C.text }}>3 dias</span> o sistema confere se o número já foi aprovado; se foi, o grupo entra no disparo</li>
               <li>• Grupo em que <span style={{ color: C.text }}>só administrador pode enviar</span>: pula nas 2 primeiras vezes; na <span style={{ color: C.text }}>3ª vez o número sai do grupo</span> e o grupo é marcado como inválido (não entra mais). Se o grupo abrir, a contagem zera</li>
               <li>• Mensagens de texto são enviadas <span style={{ color: C.text }}>sem prévia de link</span></li>
             </ul>
@@ -1826,7 +1826,7 @@ function OperacaoTab({ nichos }) {
               <li>• <span style={{ color: C.text }}>Rampa de entradas por dia</span>: 20 na 1ª semana, depois 30, 40 e 50 (+10 por semana, até o teto do número). O número depois da barra mostra o limite real do dia e pode ser editado a qualquer momento — a rampa recomeça a partir do valor que você colocar</li>
               <li>• O dia de entradas começa às <span style={{ color: C.text }}>06:00 (Brasília)</span> e conta pedidos aguardando aprovação também</li>
               <li>• Se o WhatsApp bloquear um número (rate-overlimit), ele para na hora e fica <span style={{ color: C.text }}>pausado por 3 dias</span>. Volta como <span style={{ color: C.text }}>ativo</span> (não aquecendo), na <span style={{ color: C.text }}>metade do ritmo</span> em que estava (mínimo de 10 por dia), e a rampa recomeça dali</li>
-              <li>• Pedido de entrada <span style={{ color: C.text }}>sem aprovação há mais de 7 dias</span> sai do número (todo dia às 06:17) e libera a vaga. O grupo <span style={{ color: C.text }}>não é banido</span>: outro número ainda pode tentar entrar nele</li>
+              <li>• Pedido de entrada <span style={{ color: C.text }}>sem aprovação há mais de 7 dias</span> sai do número na conferência de 3 em 3 dias e libera a vaga. O grupo <span style={{ color: C.text }}>não é banido</span>: outro número ainda pode tentar entrar nele</li>
               <li>• Número <span style={{ color: C.text }}>finalizado</span> que saiu de grupos (ex.: só admin) abre vaga e volta a entrar em grupos novos até completar o limite de novo</li>
               <li>• Grupo com limite de 1.024 membros, convite inválido ou fechado (só admin) não é tentado de novo</li>
             </ul>
