@@ -510,8 +510,7 @@ function DeletarNumeroButton({ numero, onDeletado }) {
 
   const deletar = async () => {
     setDeletando(true);
-    // limpa no Evolution também (libera o nome pra reuso)
-    await supabase.functions.invoke("zap-evolution", { body: { action: "delete", instanceName: numero.instancia } });
+    // só tira da operação: a instância no Evolution (e a conexão do WhatsApp) fica intacta
     await supabase.from("zap_entradas").delete().eq("numero_id", numero.id);
     await supabase.from("zap_numeros").delete().eq("id", numero.id);
     setDeletando(false);
@@ -522,7 +521,7 @@ function DeletarNumeroButton({ numero, onDeletado }) {
     return (
       <div className="flex items-center gap-1.5 justify-end">
         <span className="text-[11px]" style={{ color: C.sub }}>
-          apaga e os {numero.entrou} grupos voltam pra "sem número"
+          tira da operação (o WhatsApp continua conectado) e os {numero.entrou} grupos voltam pra "sem número"
         </span>
         <button onClick={deletar} disabled={deletando} className="px-2 py-1 text-[11px] rounded-[4px] zap-body" style={{ background: C.banido, color: "#fff", opacity: deletando ? 0.6 : 1 }}>
           {deletando ? "..." : "confirmar"}
