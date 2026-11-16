@@ -631,7 +631,7 @@ function NichoBlock({ nicho, numeros, totalCatalogo, onRecarregar }) {
   // conta simples: quantos números o nicho precisa no total (catálogo ÷ limite
   // padrão, arredondado pra cima) menos quantos já existem — conta todos os
   // números, seja qual for o status (pausado é temporário, não perde a vaga).
-  const LIMITE_PADRAO_NOVO_NUMERO = 900;
+  const LIMITE_PADRAO_NOVO_NUMERO = 800;
   const numerosNecessarios = Math.ceil(totalCatalogo / LIMITE_PADRAO_NOVO_NUMERO);
   const numerosASugerir = Math.max(numerosNecessarios - numeros.length, 0);
 
@@ -1080,7 +1080,7 @@ function NumerosTab({ nichos, numeros, cobertura, chips, loading, onRecarregar }
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <Header title="Progresso de entrada" sub={`${numeros.length} números cadastrados · limite de 900 grupos e 100 entradas/dia cada, por nicho`} />
+        <Header title="Progresso de entrada" sub={`${numeros.length} números cadastrados · limite de 800 grupos e 100 entradas/dia cada, por nicho`} />
         <button onClick={() => setCriando((c) => !c)} disabled={nichos.length === 0} className="px-3 py-2 text-[12px] rounded-[4px] zap-body transition-colors shrink-0" style={{ border: `1px solid ${C.line}`, color: C.sub, opacity: nichos.length === 0 ? 0.4 : 1 }}>
           + Puxar número do cadastro
         </button>
