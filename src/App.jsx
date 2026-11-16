@@ -27,7 +27,7 @@ const C = {
 const STATUS_STYLE = {
   ativo:     { color: C.ativo,     label: "ativo" },
   aquecendo: { color: C.aquecendo, label: "aquecendo" },
-  revalidando: { color: C.aquecendo, label: "revalidando" },
+  revalidando: { color: C.banido, label: "desconectado" },
   cheio:     { color: C.ativo,     label: "finalizado" },
   banido:    { color: C.banido,    label: "banido" },
   pausado:   { color: C.pausado,   label: "pausado" },
@@ -1238,7 +1238,7 @@ function StatusConexaoChip({ chip, onRecarregar }) {
       if (novoEstado === "open" && statusAtual !== "ativo") {
         await supabase.from("zap_numeros").update({ status: "ativo" }).eq("id", chip.zap_numero_id);
         setUltimaVerificacao("atualizado");
-      } else if (novoEstado !== "open" && statusAtual === "ativo") {
+      } else if (novoEstado !== "open" && (statusAtual === "ativo" || statusAtual === "cheio")) {
         await supabase.from("zap_numeros").update({ status: "revalidando" }).eq("id", chip.zap_numero_id);
         setUltimaVerificacao("atualizado");
       } else {
