@@ -2110,9 +2110,13 @@ function VersoesAnuncio({ execucaoId, temImagem, imagemPrincipal, chave, onSalvo
   );
 }
 
-function situacaoNumeroDisparo(estado) {
+function situacaoNumeroDisparo(estadoDoAnuncio, numero, conexao) {
+  // o ritmo (espera entre mensagens e pausa de lote) é do NÚMERO, não do anúncio
+  const estado = estadoDoAnuncio ? { ...estadoDoAnuncio, proxima_acao: numero?.disparo_proxima_acao ?? null, mensagens_no_lote: numero?.disparo_msgs_lote ?? 0 } : estadoDoAnuncio;
   if (!estado) return { label: "ainda não iniciou", cor: C.sub };
   if (estado.pausado) return { label: "pausado (não envia)", cor: C.pausado };
+  // número desconectado não envia (o disparo pula o número até reconectar)
+  if (conexao && conexao !== "open" && conexao !== "erro") return { label: "desconectado — não está enviando", cor: C.banido };
   if (estado.ciclo_completo) {
     const hora = estado.reinicia_em
       ? new Date(estado.reinicia_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })
@@ -2178,11 +2182,12 @@ function HistoricoNumero({ execucaoId, numeroId, onFechar }) {
 function DetalhesPorNumero({ execucaoId, nichoId }) {
   const [linhas, setLinhas] = useState(null);
   const [historicoAberto, setHistoricoAberto] = useState(null);
+  const [conexoes, setConexoes] = useState({}); // instancia -> 'open' | outro estado | 'erro'
 
   const carregar = async () => {
     const { data: numeros } = await supabase
       .from("zap_numeros")
-      .select("id, instancia, status")
+      .select("id, instancia, status, disparo_proxima_acao, disparo_msgs_lote")
       .eq("nicho_id", nichoId)
       .or("status.eq.ativo,status.eq.cheio,and(status.eq.pausado,envia_pausado.eq.true)");
 
@@ -2241,13 +2246,31 @@ function DetalhesPorNumero({ execucaoId, nichoId }) {
     return () => clearInterval(intervalo);
   }, [execucaoId, nichoId]);
 
+  // conexão real de cada número (consulta ao WhatsApp, 1 vez por número a cada 2 min — não a cada atualização da tela)
+  const nomesNumeros = (linhas ?? []).map((l) => l.numero.instancia).join("|");
+  useEffect(() => {
+    if (!nomesNumeros) return;
+    let vivo = true;
+    const checar = () => {
+      nomesNumeros.split("|").forEach((nome) => {
+        supabase.functions.invoke("zap-evolution", { body: { action: "status", instanceName: nome } }).then(({ data, error }) => {
+          if (!vivo) return;
+          setConexoes((c) => ({ ...c, [nome]: error || data?.error ? "erro" : data?.state ?? "erro" }));
+        });
+      });
+    };
+    checar();
+    const t = setInterval(checar, 120000);
+    return () => { vivo = false; clearInterval(t); };
+  }, [nomesNumeros]);
+
   if (linhas === null) return <div className="text-[11px] zap-mono pt-2" style={{ color: C.sub, borderTop: `1px solid ${C.line}` }}>carregando por número...</div>;
   if (linhas.length === 0) return <div className="text-[11px] zap-body pt-2" style={{ color: C.sub, borderTop: `1px solid ${C.line}` }}>nenhum número ativo nesse nicho</div>;
 
   return (
     <div className="pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
       {linhas.map(({ numero, estado, enviados, total, erros, pendentes, fechados }) => {
-        const sit = situacaoNumeroDisparo(estado);
+        const sit = situacaoNumeroDisparo(estado, numero, conexoes[numero.instancia]);
         const restante = Math.max(total - enviados - erros - pendentes - fechados, 0);
         return (
           <div key={numero.id}>
