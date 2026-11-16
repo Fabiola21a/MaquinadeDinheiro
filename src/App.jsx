@@ -1234,7 +1234,7 @@ function StatusConexaoChip({ chip, onRecarregar }) {
 
     if (chip.zap_numero_id) {
       const statusAtual = chip.zap_numeros?.status;
-      if (novoEstado === "open" && statusAtual !== "ativo") {
+      if (novoEstado === "open" && (statusAtual === "revalidando" || statusAtual === "aquecendo")) {
         await supabase.from("zap_numeros").update({ status: "ativo" }).eq("id", chip.zap_numero_id);
         setUltimaVerificacao("atualizado");
       } else if (novoEstado !== "open" && (statusAtual === "ativo" || statusAtual === "cheio")) {
@@ -1280,7 +1280,8 @@ function StatusConexaoChip({ chip, onRecarregar }) {
           phoneNumber={metodo === "codigo" ? telefone.trim() : null}
           onConectado={async () => {
             if (chip.zap_numero_id) {
-              await supabase.from("zap_numeros").update({ status: "ativo" }).eq("id", chip.zap_numero_id);
+              // número pausado/banido de propósito continua como está ao reconectar
+              await supabase.from("zap_numeros").update({ status: "ativo" }).eq("id", chip.zap_numero_id).in("status", ["revalidando", "aquecendo", "ativo", "cheio"]);
             }
             setReconectando(false);
             checar();
