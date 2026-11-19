@@ -1813,7 +1813,7 @@ function OperacaoTab({ nichos }) {
               <li>• Cada envio é único: sua versão de texto + emoji/pontuação variados + caractere invisível — nunca duas mensagens idênticas</li>
               <li>• Cada anúncio pertence a <span style={{ color: C.text }}>1 nicho só</span>, mas você pode ter <span style={{ color: C.text }}>vários anúncios simultâneos</span> no mesmo nicho</li>
               <li>• Com vários anúncios no mesmo nicho, o número tem <span style={{ color: C.text }}>um ritmo só</span> (delay e pausas valem pro número inteiro) e <span style={{ color: C.text }}>alterna os anúncios</span>. Todo grupo recebe os dois; o segundo anúncio percorre a lista de trás pra frente pra não chegar junto com o primeiro no mesmo grupo</li>
-              <li>• Terminou de mandar em todos os grupos do número? Espera <span style={{ color: C.text }}>4 horas</span> e começa o próximo ciclo</li>
+              <li>• Terminou de mandar em todos os grupos do número? Espera <span style={{ color: C.text }}>de 3 a 5 horas (sorteado a cada ciclo)</span> e começa o próximo ciclo</li>
               <li>• Número <span style={{ color: C.text }}>finalizado</span> (completou o limite de grupos) continua disparando normalmente</li>
               <li>• Grupo <span style={{ color: C.text }}>aguardando aprovação</span> não recebe disparo. A cada <span style={{ color: C.text }}>3 dias</span> o sistema confere se o número já foi aprovado; se foi, o grupo entra no disparo</li>
               <li>• Grupo em que <span style={{ color: C.text }}>só administrador pode enviar</span>: pula nas 2 primeiras vezes; na <span style={{ color: C.text }}>3ª vez o número sai do grupo</span> e o grupo é marcado como inválido (não entra mais). Se o grupo abrir, a contagem zera</li>
