@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Upload, Smartphone, Activity, Radio, RotateCcw,
-  Play, Pause, AlertTriangle, ChevronRight, ChevronDown, Plus, CheckCircle2, Loader2, Contact, Trash2, Pencil, Zap, RefreshCw
+  Play, Pause, AlertTriangle, ChevronRight, ChevronDown, Plus, CheckCircle2, Loader2, Contact, Trash2, Pencil, Zap, RefreshCw, Globe
 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 
@@ -41,6 +41,7 @@ function useZapData() {
   const [cobertura, setCobertura] = useState([]);
   const [diarias, setDiarias] = useState([]);
   const [chips, setChips] = useState([]);
+  const [proxies, setProxies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(null);
 
@@ -48,18 +49,21 @@ function useZapData() {
     if (!silencioso) setLoading(true);
     if (!silencioso) setErro(null);
     try {
-      const [n, num, cov, dia, chp] = await Promise.all([
+      const [n, num, cov, dia, chp, prx] = await Promise.all([
         supabase.from("zap_nichos").select("id, nome").order("nome"),
         supabase.from("zap_vw_numeros").select("*").order("instancia"),
         supabase.from("zap_vw_nichos_cobertura").select("*"),
         supabase.from("zap_vw_entradas_diarias").select("*").order("dia", { ascending: true }),
         supabase.from("zap_chips").select("*, zap_numeros(instancia, status)").order("criado_em"),
+        supabase.from("zap_proxies").select("*").order("nome"),
       ]);
       if (n.error) throw n.error;
       if (num.error) throw num.error;
       if (cov.error) throw cov.error;
       if (dia.error) throw dia.error;
       if (chp.error) throw chp.error;
+      if (prx.error) throw prx.error;
+      setProxies(prx.data ?? []);
       setNichos(n.data ?? []);
       setNumeros(num.data ?? []);
       setCobertura(cov.data ?? []);
@@ -82,7 +86,7 @@ function useZapData() {
     return () => clearInterval(t);
   }, [carregar]);
 
-  return { nichos, numeros, cobertura, diarias, chips, loading, erro, recarregar: () => carregar() };
+  return { nichos, numeros, cobertura, diarias, chips, proxies, loading, erro, recarregar: () => carregar() };
 }
 
 // ---------- ui bits ----------
@@ -306,6 +310,7 @@ function Nav({ tab, setTab }) {
     { id: "importar", label: "Importar grupos", icon: Upload, n: "02" },
     { id: "numeros", label: "Progresso de entrada", icon: Activity, n: "03" },
     { id: "operacao", label: "Operação", icon: Radio, n: "04" },
+    { id: "proxies", label: "Proxies", icon: Globe, n: "05" },
   ];
   return (
     <div className="w-[236px] shrink-0 pr-5" style={{ borderRight: `1px solid ${C.line}` }}>
@@ -829,7 +834,7 @@ function RecuperarNumeroForm({ numeroPerdido, onFeito, onFechar }) {
   );
 }
 
-function QrConector({ instanceName, phoneNumber, onConectado, acao = "create" }) {
+function QrConector({ instanceName, phoneNumber, onConectado, acao = "create", proxyId }) {
   const [qr, setQr] = useState(null);
   const [qrRaw, setQrRaw] = useState(null);
   const [pairingCode, setPairingCode] = useState(null);
@@ -842,12 +847,18 @@ function QrConector({ instanceName, phoneNumber, onConectado, acao = "create" })
 
     const iniciar = async () => {
       const { data, error } = await supabase.functions.invoke("zap-evolution", {
-        body: { action: acao, instanceName, phoneNumber: phoneNumber || undefined },
+        // "connect" cria a instância se não existir, aplica o proxy escolhido (null = sem proxy) e devolve QR/código
+        body: { action: acao, instanceName, phoneNumber: phoneNumber || undefined, ...(acao === "connect" ? { proxyId: proxyId ?? null } : {}) },
       });
       if (cancelado) return;
       if (error || data?.error) {
         setErro(data?.error ?? error.message);
         setStatus("erro");
+        return;
+      }
+      if (data?.state === "open") {
+        setStatus("conectado");
+        onConectado();
         return;
       }
       setQr(data.qrcode);
@@ -871,7 +882,7 @@ function QrConector({ instanceName, phoneNumber, onConectado, acao = "create" })
 
     iniciar();
     return () => { cancelado = true; if (poll) clearInterval(poll); };
-  }, [instanceName, phoneNumber]);
+  }, [instanceName, phoneNumber, proxyId]);
 
   if (status === "erro") return <ErroAviso mensagem={`Erro ao conectar no Evolution: ${erro}`} />;
   if (status === "conectado") {
@@ -1178,13 +1189,56 @@ function NovoChipForm({ onCriado, onFechar }) {
   );
 }
 
-function StatusConexaoChip({ chip, onRecarregar }) {
+// ---------- Proxies: regras e seletor ----------
+
+const MAX_POR_PROXY = 3;
+
+// quantos chips estão usando o proxy (chip com número banido libera a vaga)
+function usadosDoProxy(proxyId, chips) {
+  return chips.filter((c) => c.proxy_id === proxyId && c.zap_numeros?.status !== "banido").length;
+}
+
+function diasParaVencer(data) {
+  if (!data) return null;
+  return Math.ceil((new Date(data + "T23:59:59").getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+}
+
+function ProxySelect({ proxies, chips, value, onChange, chipId }) {
+  const chipAtual = chips.find((c) => c.id === chipId);
+  return (
+    <select
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+      className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none w-full"
+      style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text }}
+    >
+      <option value="">Sem proxy</option>
+      {proxies.map((p) => {
+        const usados = usadosDoProxy(p.id, chips);
+        const dele = chipAtual?.proxy_id === p.id;
+        const cheio = usados >= MAX_POR_PROXY && !dele;
+        const dias = diasParaVencer(p.expira_em);
+        const vencido = dias !== null && dias < 0;
+        return (
+          <option key={p.id} value={p.id} disabled={cheio || vencido}>
+            {p.nome} · {usados}/{MAX_POR_PROXY}{cheio ? " (cheio)" : ""}{vencido ? " (vencido)" : ""}
+          </option>
+        );
+      })}
+    </select>
+  );
+}
+
+function StatusConexaoChip({ chip, chips = [], proxies = [], onRecarregar }) {
   const [checando, setChecando] = useState(true);
   const [estado, setEstado] = useState(null); // 'open' | outro estado | null
   const [existeNoEvolution, setExisteNoEvolution] = useState(true);
   const [reconectando, setReconectando] = useState(false);
   const [metodo, setMetodo] = useState("qr");
-  const [telefone, setTelefone] = useState("");
+  const [telefone, setTelefone] = useState(() => String(chip.numero ?? "").replace(/\D/g, ""));
+  const [proxyId, setProxyId] = useState(chip.proxy_id ?? null);
+  const [iniciado, setIniciado] = useState(false);
+  const [erroProxy, setErroProxy] = useState(null);
   const [verificando, setVerificando] = useState(false);
   const [ultimaVerificacao, setUltimaVerificacao] = useState(null); // 'atualizado' | 'sem_mudanca' | null
 
@@ -1269,26 +1323,68 @@ function StatusConexaoChip({ chip, onRecarregar }) {
     </button>
   );
 
+  const fecharModal = () => {
+    setReconectando(false);
+    setIniciado(false);
+    setErroProxy(null);
+  };
+
+  // escolhe o proxy (a trava de 3 por proxy é conferida no banco) e só então gera o QR/código
+  const iniciarConexao = async () => {
+    setErroProxy(null);
+    if (metodo === "codigo" && !telefone.trim()) return;
+    if ((chip.proxy_id ?? null) !== proxyId) {
+      const { error } = await supabase.from("zap_chips").update({ proxy_id: proxyId }).eq("id", chip.id);
+      if (error) {
+        setErroProxy(String(error.message).includes("limite_proxy") ? "Esse proxy já tem 3 números. Escolha outro." : error.message);
+        return;
+      }
+    }
+    setIniciado(true);
+  };
+
   const modal = reconectando && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setReconectando(false)}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={fecharModal}>
       <div onClick={(e) => e.stopPropagation()} className="w-full max-w-[360px] rounded-[6px] p-5" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
         <div className="text-[13px] zap-mono mb-3" style={{ color: C.text }}>{instancia} · conectar</div>
-        <MetodoConexao metodo={metodo} setMetodo={setMetodo} telefone={telefone} setTelefone={setTelefone} />
-        <QrConector
-          acao={existeNoEvolution ? "reconnect" : "create"}
-          instanceName={instancia}
-          phoneNumber={metodo === "codigo" ? telefone.trim() : null}
-          onConectado={async () => {
-            if (chip.zap_numero_id) {
-              // número pausado/banido de propósito continua como está ao reconectar
-              await supabase.from("zap_numeros").update({ status: "ativo" }).eq("id", chip.zap_numero_id).in("status", ["revalidando", "aquecendo", "ativo", "cheio"]);
-            }
-            setReconectando(false);
-            checar();
-            onRecarregar();
-          }}
-        />
-        <button onClick={() => setReconectando(false)} className="text-[11px] mt-2" style={{ color: C.sub }}>cancelar</button>
+        {!iniciado ? (
+          <>
+            <MetodoConexao metodo={metodo} setMetodo={setMetodo} telefone={telefone} setTelefone={setTelefone} />
+            <div className="text-[11px] mb-1.5 zap-mono uppercase" style={{ color: C.sub }}>Proxy</div>
+            <div className="mb-3">
+              <ProxySelect proxies={proxies} chips={chips} value={proxyId} onChange={setProxyId} chipId={chip.id} />
+              {proxies.length === 0 && (
+                <div className="text-[11px] mt-1" style={{ color: C.sub }}>Nenhum proxy cadastrado ainda (aba Proxies).</div>
+              )}
+            </div>
+            <button
+              onClick={iniciarConexao}
+              disabled={metodo === "codigo" && !telefone.trim()}
+              className="px-3 py-2 text-[12px] rounded-[4px] zap-body"
+              style={{ background: C.ativo, color: "#06110B" }}
+            >
+              {metodo === "codigo" ? "Gerar código" : "Gerar QR code"}
+            </button>
+            {erroProxy && <div className="text-[11px] mt-2" style={{ color: C.banido }}>{erroProxy}</div>}
+          </>
+        ) : (
+          <QrConector
+            acao="connect"
+            instanceName={instancia}
+            phoneNumber={metodo === "codigo" ? telefone.trim() : null}
+            proxyId={proxyId}
+            onConectado={async () => {
+              if (chip.zap_numero_id) {
+                // número pausado/banido de propósito continua como está ao reconectar
+                await supabase.from("zap_numeros").update({ status: "ativo" }).eq("id", chip.zap_numero_id).in("status", ["revalidando", "aquecendo", "ativo", "cheio"]);
+              }
+              fecharModal();
+              checar();
+              onRecarregar();
+            }}
+          />
+        )}
+        <button onClick={fecharModal} className="text-[11px] mt-2 block" style={{ color: C.sub }}>cancelar</button>
       </div>
     </div>
   );
@@ -1338,7 +1434,72 @@ function StatusConexaoChip({ chip, onRecarregar }) {
   );
 }
 
-function ChipRow({ chip, onRecarregar }) {
+// troca (ou tira) o proxy de um chip que já existe no Evolution
+function ProxyChipButton({ chip, chips, proxies, onRecarregar }) {
+  const [aberto, setAberto] = useState(false);
+  const [proxyId, setProxyId] = useState(chip.proxy_id ?? null);
+  const [salvando, setSalvando] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const instancia = chip.zap_numeros?.instancia || chip.nome;
+  const atual = proxies.find((p) => p.id === chip.proxy_id);
+
+  if (!instancia) return null;
+
+  const aplicar = async () => {
+    setSalvando(true);
+    setMsg(null);
+    if ((chip.proxy_id ?? null) !== proxyId) {
+      const { error } = await supabase.from("zap_chips").update({ proxy_id: proxyId }).eq("id", chip.id);
+      if (error) {
+        setMsg(String(error.message).includes("limite_proxy") ? "Esse proxy já tem 3 números. Escolha outro." : error.message);
+        setSalvando(false);
+        return;
+      }
+    }
+    const { data, error } = await supabase.functions.invoke("zap-evolution", {
+      body: { action: "proxy_aplicar", instanceName: instancia, proxyId },
+    });
+    setSalvando(false);
+    if (error || data?.error) {
+      setMsg(`Salvo no sistema, mas não aplicou no Evolution: ${data?.error ?? error.message}`);
+      onRecarregar();
+      return;
+    }
+    setAberto(false);
+    onRecarregar();
+  };
+
+  return (
+    <>
+      <button
+        onClick={() => { setProxyId(chip.proxy_id ?? null); setMsg(null); setAberto(true); }}
+        className="p-1.5 rounded-[4px]"
+        style={{ color: atual ? C.ativo : C.sub }}
+        title={atual ? `proxy: ${atual.nome}` : "sem proxy · clique pra escolher"}
+      >
+        <Globe size={13} />
+      </button>
+      {aberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setAberto(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-[360px] rounded-[6px] p-5 text-left" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+            <div className="text-[13px] zap-mono mb-3" style={{ color: C.text }}>{instancia} · proxy</div>
+            <ProxySelect proxies={proxies} chips={chips} value={proxyId} onChange={setProxyId} chipId={chip.id} />
+            <div className="text-[11px] mt-2 mb-3" style={{ color: C.sub }}>Aplica na hora no Evolution. Eu não sei se trocar o proxy de uma conta conectada derruba a sessão.</div>
+            <div className="flex items-center gap-3">
+              <button onClick={aplicar} disabled={salvando} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando ? 0.6 : 1 }}>
+                {salvando ? "aplicando..." : "Aplicar"}
+              </button>
+              <button onClick={() => setAberto(false)} className="text-[12px]" style={{ color: C.sub }}>cancelar</button>
+            </div>
+            {msg && <div className="text-[11px] mt-2" style={{ color: C.banido }}>{msg}</div>}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ChipRow({ chip, chips = [], proxies = [], onRecarregar }) {
   const [editando, setEditando] = useState(false);
   const [numero, setNumero] = useState(chip.numero);
   const [nome, setNome] = useState(chip.nome ?? "");
@@ -1404,7 +1565,14 @@ function ChipRow({ chip, onRecarregar }) {
     <tr style={{ borderTop: `1px solid ${C.line}` }}>
       <td className="px-3 py-2.5 zap-body" style={{ color: C.text }}>{chip.nome || <span style={{ color: C.sub }}>—</span>}</td>
       <td className="px-3 py-2.5 zap-mono" style={{ color: C.text }}>{chip.numero}</td>
-      <td className="px-3 py-2.5 zap-body" style={{ color: C.sub }}>{chip.local || "—"}</td>
+      <td className="px-3 py-2.5 zap-body" style={{ color: C.sub }}>
+        {chip.local || "—"}
+        {chip.proxy_id && (
+          <div className="zap-mono text-[10px] mt-0.5 truncate" style={{ color: C.ativo }} title="proxy">
+            {proxies.find((p) => p.id === chip.proxy_id)?.nome ?? "proxy"}
+          </div>
+        )}
+      </td>
       <td className="px-3 py-2.5 zap-mono" style={{ color: C.sub }}>{idadeTexto(chip.criado_em)}</td>
       <td className="px-3 py-2.5">
         <div>
@@ -1429,7 +1597,8 @@ function ChipRow({ chip, onRecarregar }) {
       </td>
       <td className="px-3 py-2.5 text-right whitespace-nowrap">
         <div className="inline-flex items-center gap-2">
-          <StatusConexaoChip chip={chip} onRecarregar={onRecarregar} />
+          <StatusConexaoChip chip={chip} chips={chips} proxies={proxies} onRecarregar={onRecarregar} />
+          <ProxyChipButton chip={chip} chips={chips} proxies={proxies} onRecarregar={onRecarregar} />
           <button onClick={trocarParaAquecer} disabled={aquecendoAcao} className="p-1.5 rounded-[4px]" style={{ color: C.aquecendo }} title="trocar para aquecer">
             <Zap size={13} />
           </button>
@@ -1445,7 +1614,7 @@ function ChipRow({ chip, onRecarregar }) {
   );
 }
 
-function ChipsTab({ chips, loading, onRecarregar }) {
+function ChipsTab({ chips, proxies = [], loading, onRecarregar }) {
   const [criando, setCriando] = useState(false);
 
   const disponiveis = chips.filter((c) => !c.zap_numeros || c.zap_numeros.status === "banido");
@@ -1467,21 +1636,227 @@ function ChipsTab({ chips, loading, onRecarregar }) {
       ) : chips.length === 0 ? (
         <EmptyState titulo="Nenhum chip cadastrado" sub="Cadastre seus números aqui pra ter um inventário de reserva." />
       ) : (
-        <Card className="max-w-[720px]">
+        <Card className="max-w-[820px]">
           <table className="w-full text-[13px] table-fixed">
             <thead>
               <tr className="text-left zap-mono text-[10px] uppercase tracking-wide" style={{ color: C.sub }}>
-                <th className="px-3 py-2.5 font-normal w-[16%]">Nome</th>
-                <th className="px-3 py-2.5 font-normal w-[15%]">Número</th>
-                <th className="px-3 py-2.5 font-normal w-[14%]">Local</th>
+                <th className="px-3 py-2.5 font-normal w-[15%]">Nome</th>
+                <th className="px-3 py-2.5 font-normal w-[14%]">Número</th>
+                <th className="px-3 py-2.5 font-normal w-[14%]">Local / proxy</th>
                 <th className="px-3 py-2.5 font-normal w-[7%]">Idade</th>
-                <th className="px-3 py-2.5 font-normal w-[30%]">Uso</th>
-                <th className="px-3 py-2.5 font-normal w-[18%]"></th>
+                <th className="px-3 py-2.5 font-normal w-[24%]">Uso</th>
+                <th className="px-3 py-2.5 font-normal w-[26%]"></th>
               </tr>
             </thead>
             <tbody>
               {[...emUso, ...disponiveis].map((c) => (
-                <ChipRow key={c.id} chip={c} onRecarregar={onRecarregar} />
+                <ChipRow key={c.id} chip={c} chips={chips} proxies={proxies} onRecarregar={onRecarregar} />
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ---------- Proxies ----------
+
+const inputProxyStyle = { background: "rgba(0,0,0,0.3)", border: `1px solid ${C.line}`, color: C.text };
+
+function ProxyForm({ proxy, onSalvo, onFechar }) {
+  const editando = !!proxy;
+  const [nome, setNome] = useState(proxy?.nome ?? "");
+  const [host, setHost] = useState(proxy?.host ?? "");
+  const [portaHttp, setPortaHttp] = useState(proxy?.porta_http ?? "");
+  const [portaSocks, setPortaSocks] = useState(proxy?.porta_socks ?? "");
+  const [usuario, setUsuario] = useState("");
+  const [senha, setSenha] = useState("");
+  const [expiraEm, setExpiraEm] = useState(proxy?.expira_em ?? "");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState(null);
+
+  const pronto = nome.trim() && host.trim() && (portaHttp || portaSocks) && (editando || (usuario.trim() && senha.trim()));
+
+  const salvar = async () => {
+    if (!pronto) return;
+    setSalvando(true);
+    setErro(null);
+    // usuário e senha vão direto pro servidor; o navegador nunca lê de volta
+    const { data, error } = await supabase.functions.invoke("zap-evolution", {
+      body: {
+        action: "proxy_salvar",
+        id: proxy?.id,
+        nome: nome.trim(),
+        host: host.trim(),
+        porta_http: portaHttp ? Number(portaHttp) : null,
+        porta_socks: portaSocks ? Number(portaSocks) : null,
+        usuario: usuario.trim(),
+        senha: senha.trim(),
+        expira_em: expiraEm || null,
+      },
+    });
+    setSalvando(false);
+    if (error || data?.error) {
+      setErro(data?.error ?? error.message);
+      return;
+    }
+    onSalvo();
+    onFechar();
+  };
+
+  return (
+    <Card className="p-4 mb-4">
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="nome (ex: Geonix BR 1)" className="px-3 py-2 rounded-[4px] text-[12px] zap-body outline-none" style={inputProxyStyle} />
+        <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="IP (ex: 205.186.92.118)" className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none" style={inputProxyStyle} />
+        <input value={portaHttp} onChange={(e) => setPortaHttp(e.target.value.replace(/\D/g, ""))} placeholder="porta HTTP(s)" className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none" style={inputProxyStyle} />
+        <input value={portaSocks} onChange={(e) => setPortaSocks(e.target.value.replace(/\D/g, ""))} placeholder="porta SOCKS5 (a que o sistema usa)" className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none" style={inputProxyStyle} />
+        <input value={usuario} onChange={(e) => setUsuario(e.target.value)} placeholder={editando ? "usuário (vazio = manter)" : "usuário"} autoComplete="off" className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none" style={inputProxyStyle} />
+        <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} placeholder={editando ? "senha (vazio = manter)" : "senha"} autoComplete="new-password" className="px-3 py-2 rounded-[4px] text-[12px] zap-mono outline-none" style={inputProxyStyle} />
+        <div className="flex items-center gap-2 col-span-2">
+          <span className="text-[11px]" style={{ color: C.sub }}>vence em</span>
+          <input type="date" value={expiraEm ?? ""} onChange={(e) => setExpiraEm(e.target.value)} className="px-2 py-2 rounded-[4px] text-[12px] zap-mono outline-none" style={inputProxyStyle} />
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <button onClick={salvar} disabled={salvando || !pronto} className="px-3 py-2 text-[12px] rounded-[4px] zap-body" style={{ background: C.ativo, color: "#06110B", opacity: salvando || !pronto ? 0.6 : 1 }}>
+          {salvando ? "salvando..." : editando ? "Salvar alterações" : "Salvar proxy"}
+        </button>
+        <button onClick={onFechar} className="text-[12px]" style={{ color: C.sub }}>cancelar</button>
+      </div>
+      {erro && <div className="text-[11px] mt-2" style={{ color: C.banido }}>{erro}</div>}
+    </Card>
+  );
+}
+
+// data de vencimento editável direto na linha (renovou? é só trocar a data)
+function ValidadeProxy({ proxy, onSalvo }) {
+  const [data, setData] = useState(proxy.expira_em ?? "");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState(null);
+  useEffect(() => { setData(proxy.expira_em ?? ""); }, [proxy.expira_em]);
+
+  const dias = diasParaVencer(data || null);
+  const cor = dias === null ? C.sub : dias < 0 ? C.banido : dias <= 7 ? "#D9A441" : C.ativo;
+  const texto = dias === null ? "sem data" : dias < 0 ? `vencido há ${-dias} ${-dias === 1 ? "dia" : "dias"}` : dias === 0 ? "vence hoje" : `faltam ${dias} ${dias === 1 ? "dia" : "dias"}`;
+
+  const salvar = async (novaData) => {
+    setData(novaData);
+    if (!novaData) return;
+    setSalvando(true);
+    setErro(null);
+    const { error } = await supabase.from("zap_proxies").update({ expira_em: novaData }).eq("id", proxy.id);
+    setSalvando(false);
+    if (error) { setErro(error.message); return; }
+    onSalvo();
+  };
+
+  return (
+    <div>
+      <input
+        type="date"
+        value={data}
+        onChange={(e) => salvar(e.target.value)}
+        className="px-2 py-1 rounded-[4px] text-[11px] zap-mono outline-none"
+        style={{ ...inputProxyStyle, opacity: salvando ? 0.6 : 1 }}
+        title="trocou a data? salva sozinho"
+      />
+      <div className="zap-mono text-[10px] mt-1" style={{ color: cor }}>{texto}</div>
+      {erro && <div className="text-[10px]" style={{ color: C.banido }}>{erro}</div>}
+    </div>
+  );
+}
+
+function ProxyRow({ proxy, chips, onRecarregar }) {
+  const [editando, setEditando] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
+  const usados = chips.filter((c) => c.proxy_id === proxy.id && c.zap_numeros?.status !== "banido");
+
+  const apagar = async () => {
+    await supabase.from("zap_proxies").delete().eq("id", proxy.id);
+    onRecarregar();
+  };
+
+  if (editando) {
+    return (
+      <tr>
+        <td colSpan={5} className="px-3 py-3" style={{ borderTop: `1px solid ${C.line}` }}>
+          <ProxyForm proxy={proxy} onSalvo={onRecarregar} onFechar={() => setEditando(false)} />
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <tr style={{ borderTop: `1px solid ${C.line}` }}>
+      <td className="px-3 py-2.5 zap-body" style={{ color: C.text }}>{proxy.nome}</td>
+      <td className="px-3 py-2.5 zap-mono text-[11px]" style={{ color: C.sub }}>
+        {proxy.host}
+        <div>HTTP {proxy.porta_http ?? "—"} · SOCKS5 {proxy.porta_socks ?? "—"}</div>
+      </td>
+      <td className="px-3 py-2.5"><ValidadeProxy proxy={proxy} onSalvo={onRecarregar} /></td>
+      <td className="px-3 py-2.5">
+        <span className="zap-mono text-[12px]" style={{ color: usados.length >= MAX_POR_PROXY ? C.banido : C.text }}>
+          {usados.length}/{MAX_POR_PROXY}
+        </span>
+        <div className="text-[10px] zap-body" style={{ color: C.sub }}>{usados.map((c) => c.nome || c.numero).join(", ") || "livre"}</div>
+      </td>
+      <td className="px-3 py-2.5 text-right whitespace-nowrap">
+        <div className="inline-flex items-center gap-2">
+          <button onClick={() => setEditando(true)} className="p-1.5 rounded-[4px]" style={{ color: C.sub }} title="editar proxy">
+            <Pencil size={13} />
+          </button>
+          {confirmando ? (
+            <span className="inline-flex items-center gap-2 text-[11px]">
+              <button onClick={apagar} style={{ color: C.banido }}>apagar mesmo</button>
+              <button onClick={() => setConfirmando(false)} style={{ color: C.sub }}>não</button>
+            </span>
+          ) : (
+            <button onClick={() => setConfirmando(true)} className="p-1.5 rounded-[4px]" style={{ color: C.sub }} title="apagar proxy">
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function ProxiesTab({ proxies, chips, loading, onRecarregar }) {
+  const [criando, setCriando] = useState(false);
+  const vagas = proxies.reduce((s, p) => s + Math.max(0, MAX_POR_PROXY - usadosDoProxy(p.id, chips)), 0);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <Header title="Proxies" sub={`${proxies.length} cadastrados · ${vagas} vagas livres · máximo de ${MAX_POR_PROXY} números por proxy`} />
+        <button onClick={() => setCriando((c) => !c)} className="px-3 py-2 text-[12px] rounded-[4px] zap-body transition-colors shrink-0" style={{ border: `1px solid ${C.line}`, color: C.sub }}>
+          + Cadastrar proxy
+        </button>
+      </div>
+
+      {criando && <ProxyForm onSalvo={onRecarregar} onFechar={() => setCriando(false)} />}
+
+      {loading ? (
+        <Spinner />
+      ) : proxies.length === 0 ? (
+        <EmptyState titulo="Nenhum proxy cadastrado" sub="Cadastre o IP, as portas, o usuário, a senha e a data de vencimento. Depois é só escolher o proxy na hora de conectar o número." />
+      ) : (
+        <Card className="max-w-[820px]">
+          <table className="w-full text-[13px] table-fixed">
+            <thead>
+              <tr className="text-left zap-mono text-[10px] uppercase tracking-wide" style={{ color: C.sub }}>
+                <th className="px-3 py-2.5 font-normal w-[20%]">Nome</th>
+                <th className="px-3 py-2.5 font-normal w-[27%]">IP e portas</th>
+                <th className="px-3 py-2.5 font-normal w-[20%]">Vencimento</th>
+                <th className="px-3 py-2.5 font-normal w-[19%]">Números</th>
+                <th className="px-3 py-2.5 font-normal w-[14%]"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {proxies.map((p) => (
+                <ProxyRow key={p.id} proxy={p} chips={chips} onRecarregar={onRecarregar} />
               ))}
             </tbody>
           </table>
@@ -2326,20 +2701,22 @@ function tempoRelativo(iso) {
 
 export default function App() {
   const [tab, setTab] = useState("chips");
-  const { nichos, numeros, cobertura, diarias, chips, loading, erro, recarregar } = useZapData();
+  const { nichos, numeros, cobertura, diarias, chips, proxies, loading, erro, recarregar } = useZapData();
 
   const Content = useMemo(() => {
     switch (tab) {
       case "importar":
         return <ImportarTab nichos={nichos} onDadosMudaram={recarregar} />;
       case "chips":
-        return <ChipsTab chips={chips} loading={loading} onRecarregar={recarregar} />;
+        return <ChipsTab chips={chips} proxies={proxies} loading={loading} onRecarregar={recarregar} />;
+      case "proxies":
+        return <ProxiesTab proxies={proxies} chips={chips} loading={loading} onRecarregar={recarregar} />;
       case "operacao":
         return <OperacaoTab nichos={nichos} />;
       default:
         return <NumerosTab nichos={nichos} numeros={numeros} cobertura={cobertura} chips={chips} loading={loading} onRecarregar={recarregar} />;
     }
-  }, [tab, nichos, numeros, cobertura, diarias, chips, loading, recarregar]);
+  }, [tab, nichos, numeros, cobertura, diarias, chips, proxies, loading, recarregar]);
 
   return (
     <div className="min-h-screen w-full zap-body" style={{ background: C.bg, color: C.text }}>
