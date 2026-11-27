@@ -2185,6 +2185,7 @@ function OperacaoTab({ nichos }) {
             <ul className="text-[12px] zap-body flex flex-col gap-2" style={{ color: C.sub }}>
               <li>• Delay de <span style={{ color: C.text }}>20 a 40 segundos</span> entre uma mensagem e outra, sempre variando (nunca fixo)</li>
               <li>• Lote de <span style={{ color: C.text }}>10 a 15 mensagens</span>, depois <span style={{ color: C.text }}>pausa de 3 a 5 minutos</span> antes de continuar</li>
+              <li>• Cada anúncio tem várias versões, e o sistema <span style={{ color: C.text }}>sorteia uma a cada envio</span>. O farol ao lado de cada versão pausa só ela (apagado = não é enviada, o texto fica guardado). Sempre fica pelo menos 1 versão ativa</li>
               <li>• Cada envio é único: sua versão de texto + emoji/pontuação variados + caractere invisível — nunca duas mensagens idênticas</li>
               <li>• Cada anúncio pertence a <span style={{ color: C.text }}>1 nicho só</span>, mas você pode ter <span style={{ color: C.text }}>vários anúncios simultâneos</span> no mesmo nicho</li>
               <li>• Com vários anúncios no mesmo nicho, o número tem <span style={{ color: C.text }}>um ritmo só</span> (delay e pausas valem pro número inteiro) e <span style={{ color: C.text }}>alterna os anúncios</span>. Todo grupo recebe os dois; o segundo anúncio percorre a lista de trás pra frente pra não chegar junto com o primeiro no mesmo grupo</li>
@@ -2333,7 +2334,7 @@ function VersoesAnuncio({ execucaoId, temImagem, imagemPrincipal, chave, onSalvo
   const recarregar = async () => {
     const { data } = await supabase
       .from("zap_disparo_variantes")
-      .select("id, texto, com_imagem, imagem_url")
+      .select("id, texto, com_imagem, imagem_url, ativo")
       .eq("execucao_id", execucaoId)
       .order("id");
     setVersoes(data ?? []);
@@ -2365,6 +2366,22 @@ function VersoesAnuncio({ execucaoId, temImagem, imagemPrincipal, chave, onSalvo
     setOcupado(null);
     if (error) { setErro(error.message); return; }
     setEditados((e) => { const { [v.id]: _, ...resto } = e; return resto; });
+    await recarregar();
+    onSalvou();
+  };
+
+  // farol da versão: verde = entra no sorteio do disparo; apagado = pausada (o texto fica guardado)
+  const alternarAtiva = async (v) => {
+    const ativas = versoes.filter((x) => x.ativo !== false).length;
+    if (v.ativo !== false && ativas <= 1) {
+      setErro("Precisa ficar pelo menos 1 versão ativa. Pra parar o anúncio todo, use o botão pausar do anúncio.");
+      return;
+    }
+    setOcupado(`v${v.id}`);
+    setErro(null);
+    const { error } = await supabase.from("zap_disparo_variantes").update({ ativo: v.ativo === false }).eq("id", v.id);
+    setOcupado(null);
+    if (error) { setErro(error.message); return; }
     await recarregar();
     onSalvou();
   };
@@ -2401,11 +2418,19 @@ function VersoesAnuncio({ execucaoId, temImagem, imagemPrincipal, chave, onSalvo
         return (
           <div key={v.id} className="flex items-start gap-2">
             <span className="text-[11px] zap-mono mt-2.5" style={{ color: C.sub }}>{i + 1}.</span>
+            <button
+              onClick={() => alternarAtiva(v)}
+              disabled={ocupado === `v${v.id}`}
+              title={v.ativo === false ? "versão pausada (não é enviada) — clique pra ativar" : "versão ativa — clique pra pausar só ela"}
+              className="p-1.5 mt-2"
+            >
+              <Led color={v.ativo === false ? C.pausado : C.ativo} live={v.ativo !== false} />
+            </button>
             <textarea
               value={editados[v.id] ?? v.texto}
               onChange={(e) => setEditados((ed) => ({ ...ed, [v.id]: e.target.value }))}
               className="flex-1 h-20 rounded-[4px] px-3 py-2 text-[12px] zap-body outline-none resize-none"
-              style={estiloCampo(mudou)}
+              style={{ ...estiloCampo(mudou), opacity: v.ativo === false ? 0.5 : 1 }}
             />
             {temImagem && (
               <select
